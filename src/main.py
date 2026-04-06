@@ -5,6 +5,7 @@ import argparse
 from .bootstrap_graph import build_bootstrap_graph
 from .command_graph import build_command_graph
 from .commands import execute_command, get_command, get_commands, render_command_index
+from .import_cmd import ImportCommand
 from .direct_modes import run_deep_link, run_direct_connect
 from .parity_audit import run_parity_audit
 from .permissions import ToolPermissionContext
@@ -88,6 +89,17 @@ def build_parser() -> argparse.ArgumentParser:
     exec_tool_parser = subparsers.add_parser('exec-tool', help='execute a mirrored tool shim by exact name')
     exec_tool_parser.add_argument('name')
     exec_tool_parser.add_argument('payload')
+
+    import_parser = subparsers.add_parser('import', help='import data from Claude Code')
+    import_parser.add_argument('--from', dest='source', required=True, choices=['claude'], help='source to import from')
+    import_parser.add_argument('--global', dest='is_global', action='store_true', help='import global config (~/.claude)')
+    import_parser.add_argument('--local', dest='is_local', action='store_true', help='import local config (.claude in cwd)')
+    import_parser.add_argument('--all', dest='import_all', action='store_true', default=True, help='import everything')
+    import_parser.add_argument('--sessions-only', dest='sessions_only', action='store_true', help='import only session history')
+    import_parser.add_argument('--dry-run', dest='dry_run', action='store_true', help='preview without applying')
+    import_parser.add_argument('--verbose', '-v', action='store_true', help='verbose output')
+    import_parser.add_argument('--claw-dir', dest='claw_dir', type=str, default='.claw', help='target ClawCode directory')
+
     return parser
 
 
@@ -205,6 +217,8 @@ def main(argv: list[str] | None = None) -> int:
         result = execute_tool(args.name, args.payload)
         print(result.message)
         return 0 if result.handled else 1
+    if args.command == 'import':
+        return ImportCommand.execute(args)
     parser.error(f'unknown command: {args.command}')
     return 2
 
