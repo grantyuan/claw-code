@@ -7,6 +7,31 @@ set -e
 
 cd "$(dirname "$0")"
 
+# Ensure native Rust is used (not Snap version)
+if [[ "$PATH" == *"/snap/bin"* ]] && [[ -f "$HOME/.cargo/env" ]]; then
+    echo "ℹ️  Switching to native Rust (not Snap version)..."
+    source "$HOME/.cargo/env"
+fi
+
+# Check if cargo is available
+if ! command -v cargo &> /dev/null; then
+    echo "❌ Rust/Cargo not found. Please install Rust:"
+    echo "   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    echo "   source \$HOME/.cargo/env"
+    exit 1
+fi
+
+# Check if using Snap version of cargo
+if [[ "$(which cargo)" == *"/snap/"* ]]; then
+    echo "❌ Detected Snap version of Rust. This won't work with Tauri."
+    echo ""
+    echo "Please install native Rust:"
+    echo "   1. sudo snap remove rustup"
+    echo "   2. curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    echo "   3. source \$HOME/.cargo/env"
+    exit 1
+fi
+
 echo "🚀 ClawCode - AI Agent Desktop Application"
 echo "============================================"
 
