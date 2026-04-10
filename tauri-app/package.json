@@ -14,11 +14,18 @@
     "lint": "eslint src --ext .ts,.svelte",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": ["clawcode", "tauri", "svelte", "ai", "agents"],
+  "keywords": [
+    "clawcode",
+    "tauri",
+    "svelte",
+    "ai",
+    "agents"
+  ],
   "author": "ClawCode Team",
   "license": "MIT",
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@tailwindcss/postcss": "^4.2.2",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/cli": "^2.10.1",
     "@testing-library/jest-dom": "^6.9.1",

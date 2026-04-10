@@ -8,14 +8,14 @@
   import ProgressBar from '$components/common/ProgressBar.svelte';
   import { formatTimestamp, formatDuration } from '$utils/formatting';
 
-  $: agents = $agentList;
-  $: leader = $leaderAgent;
-  $: selected = $selectedAgent;
-  $: activeTasks = $activeTaskList;
-  $: pendingTasks = $pendingTaskList;
-  $: completedTasks = $completedTaskList;
-  $: progress = $overallProgress;
-  $: activeView = $uiStore.activeView;
+  let agents = $derived($agentList);
+  let leader = $derived($leaderAgent);
+  let selected = $derived($selectedAgent);
+  let activeTasks = $derived($activeTaskList);
+  let pendingTasks = $derived($pendingTaskList);
+  let completedTasks = $derived($completedTaskList);
+  let progress = $derived($overallProgress);
+  let activeView = $derived($uiStore.activeView);
 
   function selectAgent(agentId: string) {
     agentStore.setSelectedAgent(agentId);
@@ -54,10 +54,6 @@
     if (e.key === 'Escape' && activeView === 'agent-detail') {
       goBack();
     }
-  }
-
-  $: if (typeof window !== 'undefined') {
-    window.addEventListener('keydown', handleKeydown);
   }
 </script>
 

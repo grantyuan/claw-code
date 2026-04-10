@@ -9,10 +9,10 @@
   let inputText = $state('');
   let isComposing = $state(false);
 
-  $: leader = $leaderAgent;
-  $: messages = $messageList;
-  $: conversation = $activeConversation;
-  $: isStreaming = $chatStore.isStreaming;
+  let leader = $derived($leaderAgent);
+  let messages = $derived($messageList);
+  let conversation = $derived($activeConversation);
+  let isStreaming = $derived($chatStore.isStreaming);
 
   function initConversation() {
     if (!$chatStore.activeConversation) {

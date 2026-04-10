@@ -7,33 +7,44 @@ set -e
 
 cd "$(dirname "$0")"
 
-# Ensure native Rust is used (not Snap version)
-if [[ "$PATH" == *"/snap/bin"* ]] && [[ -f "$HOME/.cargo/env" ]]; then
-    echo "ℹ️  Switching to native Rust (not Snap version)..."
-    source "$HOME/.cargo/env"
+# Install native Rust if not present or if Snap is in PATH
+install_native_rust() {
+    if [[ -f "$HOME/.cargo/bin/cargo" ]]; then
+        echo "ℹ️  Native Rust already installed at ~/.cargo/bin"
+    else
+        echo "📦 Installing native Rust to ~/.cargo/bin..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
+        echo "✅ Native Rust installed"
+    fi
+}
+
+# Set PATH to prefer native Rust over Snap
+setup_rust_path() {
+    if [[ -f "$HOME/.cargo/env" ]]; then
+        source "$HOME/.cargo/env"
+    fi
+
+    if [[ -d "$HOME/.cargo/bin" ]]; then
+        export PATH="$HOME/.cargo/bin:$PATH"
+    fi
+}
+
+# Auto-install and setup native Rust
+if [[ "$PATH" == *"/snap/bin"* ]] || [[ "$(which cargo 2>/dev/null)" == *"/snap/"* ]] || [[ ! -f "$HOME/.cargo/bin/cargo" ]]; then
+    install_native_rust
+    setup_rust_path
 fi
 
 # Check if cargo is available
 if ! command -v cargo &> /dev/null; then
     echo "❌ Rust/Cargo not found. Please install Rust:"
     echo "   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
-    echo "   source \$HOME/.cargo/env"
-    exit 1
-fi
-
-# Check if using Snap version of cargo
-if [[ "$(which cargo)" == *"/snap/"* ]]; then
-    echo "❌ Detected Snap version of Rust. This won't work with Tauri."
-    echo ""
-    echo "Please install native Rust:"
-    echo "   1. sudo snap remove rustup"
-    echo "   2. curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
-    echo "   3. source \$HOME/.cargo/env"
     exit 1
 fi
 
 echo "🚀 ClawCode - AI Agent Desktop Application"
 echo "============================================"
+echo "   Cargo: $(which cargo)"
 
 case "${1:-start}" in
   "start"|"run"|"dev")

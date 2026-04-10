@@ -4,8 +4,6 @@ mod commands;
 mod models;
 
 use cli_server::{run_server, ServerConfig};
-use std::sync::Arc;
-use tauri::Manager;
 
 fn main() {
     tauri::Builder::default()
@@ -23,9 +21,7 @@ fn main() {
             commands::connection_commands::check_connection_health,
             commands::connection_commands::ping_host,
         ])
-        .setup(|app| {
-            let app_handle = app.handle().clone();
-            
+        .setup(|_app| {
             tauri::async_runtime::spawn(async move {
                 let config = ServerConfig::default();
                 

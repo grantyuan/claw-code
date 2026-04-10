@@ -1,15 +1,15 @@
-use crate::models::{SshConnection, SshAuthMethod, DeploymentResult, DeploymentStep, DeploymentStepStatus};
+use crate::models::{SshConnection, DeploymentResult, DeploymentStep, DeploymentStepStatus};
 
 #[tauri::command]
 pub async fn test_ssh_connection(
-    host: String,
-    port: u16,
-    username: String,
-    auth_method: String,
+    _host: String,
+    _port: u16,
+    _username: String,
+    _auth_method: String,
 ) -> Result<bool, String> {
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     
-    if host.is_empty() || username.is_empty() {
+    if _host.is_empty() || _username.is_empty() {
         return Err("Host and username are required".to_string());
     }
     
@@ -18,12 +18,12 @@ pub async fn test_ssh_connection(
 
 #[tauri::command]
 pub async fn deploy_cli_server(
-    host: String,
-    port: u16,
-    username: String,
-    auth_method: String,
-    install_path: String,
-    version: String,
+    _host: String,
+    _port: u16,
+    _username: String,
+    _auth_method: String,
+    _install_path: String,
+    _version: String,
 ) -> Result<DeploymentResult, String> {
     let start = std::time::Instant::now();
     
@@ -83,7 +83,7 @@ pub async fn deploy_cli_server(
 }
 
 #[tauri::command]
-pub async fn save_ssh_connection(connection: SshConnection) -> Result<(), String> {
+pub async fn save_ssh_connection(_connection: SshConnection) -> Result<(), String> {
     Ok(())
 }
 
@@ -93,6 +93,6 @@ pub async fn list_ssh_connections() -> Result<Vec<SshConnection>, String> {
 }
 
 #[tauri::command]
-pub async fn delete_ssh_connection(id: String) -> Result<(), String> {
+pub async fn delete_ssh_connection(_id: String) -> Result<(), String> {
     Ok(())
 }

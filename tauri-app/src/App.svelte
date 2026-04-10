@@ -1,18 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { uiStore, isDarkMode } from '$stores/uiStore';
+  import { uiStore } from '$stores/uiStore';
   import { agentStore } from '$stores/agentStore';
   import { chatStore } from '$stores/chatStore';
   import { connectionStore } from '$stores/connectionStore';
+  import { configStore } from '$stores/configStore';
   import LeftPanel from '$components/panels/LeftPanel.svelte';
   import RightPanel from '$components/panels/RightPanel.svelte';
   import SettingsPanel from '$components/settings/SettingsPanel.svelte';
   import Toast from '$components/common/Toast.svelte';
   import { ConnectionStatus } from '$types/connection';
 
-  $: actualTheme = $uiStore.actualTheme;
-  $: settingsOpen = $uiStore.settingsOpen;
-  $: panelLayout = $uiStore.panelLayout;
+  let actualTheme = $derived($uiStore.actualTheme);
+  let settingsOpen = $derived($uiStore.settingsOpen);
+  let panelLayout = $derived($uiStore.panelLayout);
 
   onMount(() => {
     uiStore.loadFromStorage();
@@ -29,17 +30,11 @@
     connectionStore.addConnection(localConnection);
   });
 
-  $: if (actualTheme === 'dark') {
+  $effect(() => {
     if (typeof document !== 'undefined') {
-      document.documentElement.classList.add('dark');
+      document.documentElement.classList.toggle('dark', actualTheme === 'dark');
     }
-  } else {
-    if (typeof document !== 'undefined') {
-      document.documentElement.classList.remove('dark');
-    }
-  }
-
-  import { configStore } from '$stores/configStore';
+  });
 </script>
 
 <div 

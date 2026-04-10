@@ -26,7 +26,7 @@
     lg: 'h-3',
   };
 
-  $: percentage = Math.min(Math.max(Math.round((progress / max) * 100), 0), 100);
+  let percentage = $derived(Math.min(Math.max(Math.round((progress / max) * 100), 0), 100));
 </script>
 
 <div class="w-full">

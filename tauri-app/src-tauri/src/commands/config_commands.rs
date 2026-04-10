@@ -39,15 +39,15 @@ pub async fn save_config(config: AppConfig) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn validate_api_key(provider: String, api_key: String, endpoint: String) -> Result<bool, String> {
-    if api_key.len() < 8 {
+pub async fn validate_api_key(_provider: String, _api_key: String, _endpoint: String) -> Result<bool, String> {
+    if _api_key.len() < 8 {
         return Err("API key must be at least 8 characters".to_string());
     }
     Ok(true)
 }
 
 #[tauri::command]
-pub async fn test_api_connection(provider: String, endpoint: String, api_key: String) -> Result<bool, String> {
+pub async fn test_api_connection(_provider: String, _endpoint: String, _api_key: String) -> Result<bool, String> {
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     Ok(true)
 }

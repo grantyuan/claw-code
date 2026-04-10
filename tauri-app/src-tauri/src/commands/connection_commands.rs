@@ -46,7 +46,7 @@ pub async fn check_connection_health(endpoint: String) -> Result<ConnectionStatu
 }
 
 #[tauri::command]
-pub async fn ping_host(host: String) -> Result<u64, String> {
+pub async fn ping_host(_host: String) -> Result<u64, String> {
     let start = std::time::Instant::now();
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
     Ok(start.elapsed().as_millis() as u64)
