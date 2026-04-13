@@ -6,6 +6,10 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
+use api::{
+    ApiError, InputContentBlock, InputMessage, MessageRequest, MessageResponse, OutputContentBlock,
+    ProviderClient,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -19,8 +23,16 @@ pub enum RuntimeError {
     Provider(String),
     #[error("Runtime not available")]
     NotAvailable,
+    #[error("API error: {0}")]
+    Api(String),
     #[error("Internal error: {0}")]
     Internal(String),
+}
+
+impl From<ApiError> for RuntimeError {
+    fn from(err: ApiError) -> Self {
+        RuntimeError::Api(err.to_string())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, RuntimeError>;
@@ -142,6 +154,18 @@ impl Session {
             message_count: self.message_count,
         }
     }
+
+    pub fn to_api_messages(&self) -> Vec<InputMessage> {
+        self.history
+            .iter()
+            .map(|m| InputMessage {
+                role: m.role.clone(),
+                content: vec![InputContentBlock::Text {
+                    text: m.content.clone(),
+                }],
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -200,7 +224,7 @@ impl Default for RuntimeConfig {
                 .unwrap_or_else(|_| "https://api.anthropic.com".to_string()),
             api_key: std::env::var("ANTHROPIC_API_KEY").ok(),
             model: std::env::var("CLAW_DEFAULT_MODEL")
-                .unwrap_or_else(|_| "claude-3-opus".to_string()),
+                .unwrap_or_else(|_| "claude-sonnet-4-6".to_string()),
         }
     }
 }
@@ -209,6 +233,7 @@ impl Default for RuntimeConfig {
 pub struct ClawRuntime {
     config: RuntimeConfig,
     sessions: Arc<Mutex<HashMap<SessionId, Session>>>,
+    provider: ProviderClient,
 }
 
 impl Clone for ClawRuntime {
@@ -216,21 +241,26 @@ impl Clone for ClawRuntime {
         Self {
             config: self.config.clone(),
             sessions: Arc::clone(&self.sessions),
+            provider: self.provider.clone(),
         }
     }
 }
 
 impl ClawRuntime {
     pub fn new(config: RuntimeConfig) -> Result<Self> {
+        let provider = ProviderClient::from_model(&config.model)
+            .map_err(|e: ApiError| RuntimeError::Provider(e.to_string()))?;
+
         tracing::info!(
-            "Initializing ClawRuntime - provider: {}, endpoint: {}, model: {}",
-            config.provider,
-            config.endpoint,
+            "Initializing ClawRuntime - provider: {:?}, model: {}",
+            provider.provider_kind(),
             config.model
         );
+
         Ok(Self {
             config,
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            provider,
         })
     }
 
@@ -315,9 +345,8 @@ impl ClawRuntime {
             });
 
             let result = match processed.command_type {
-                CommandType::UserMessage => self.process_user_message(&session_id, input)?,
                 CommandType::SlashCommand => self.process_slash_command(&session_id, input)?,
-                _ => self.process_user_message(&session_id, input)?,
+                _ => self.call_llm(session, input).await?,
             };
 
             session.history.push(Message {
@@ -336,12 +365,37 @@ impl ClawRuntime {
         Ok(response)
     }
 
-    fn process_user_message(&self, session_id: &SessionId, content: &str) -> Result<String> {
-        tracing::debug!("Processing user message for session: {}", session_id);
-        Ok(format!(
-            "ClawRuntime processed: {} (model: {}, provider: {})",
-            content, self.config.model, self.config.provider
-        ))
+    async fn call_llm(&self, session: &Session, input: &str) -> Result<String> {
+        let MessageResponse { content, .. }: MessageResponse = self
+            .provider
+            .send_message(&MessageRequest {
+                model: self.config.model.clone(),
+                max_tokens: 4096,
+                messages: {
+                    let mut msgs = session.to_api_messages();
+                    msgs.push(InputMessage::user_text(input));
+                    msgs
+                },
+                system: None,
+                tools: None,
+                tool_choice: None,
+                stream: false,
+            })
+            .await?;
+
+        let text = content
+            .into_iter()
+            .filter_map(|block| {
+                if let OutputContentBlock::Text { text } = block {
+                    Some(text)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        Ok(text)
     }
 
     fn process_slash_command(&self, session_id: &SessionId, command: &str) -> Result<String> {
