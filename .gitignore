@@ -7,3 +7,4 @@ archive/
 .claude/sessions/
 # Worktrees
 .worktrees/
+tauri-app/test-results/
