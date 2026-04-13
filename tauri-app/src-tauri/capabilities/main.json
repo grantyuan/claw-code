@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/linux-schema.json",
+  "identifier": "main-capability",
+  "description": "Main window capabilities",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}
