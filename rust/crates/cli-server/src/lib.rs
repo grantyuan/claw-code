@@ -62,9 +62,9 @@ impl Default for AppState {
 }
 
 pub async fn run_server(config: ServerConfig) -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .with_env_filter("cli_server=debug,tower_http=debug")
-        .init();
+        .try_init();
 
     let state = Arc::new(AppState::new());
 

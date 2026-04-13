@@ -24,15 +24,15 @@ fn main() {
         .setup(|_app| {
             tauri::async_runtime::spawn(async move {
                 let config = ServerConfig::default();
-                
-                tracing_subscriber::fmt()
+
+                let _ = tracing_subscriber::fmt()
                     .with_env_filter("cli_server=info,clawcode=info")
-                    .init();
-                
+                    .try_init();
+
                 println!("🚀 Starting ClawCode CLI Server...");
                 println!("   REST API: http://{}:{}", config.host, config.rest_port);
                 println!("   WebSocket: ws://{}:{}/ws", config.host, config.rest_port);
-                
+
                 if let Err(e) = run_server(config).await {
                     eprintln!("❌ CLI Server error: {}", e);
                 }
