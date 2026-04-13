@@ -51,7 +51,11 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                     Ok(ws_msg) => {
                         let response = handle_message(&ws_msg, &state).await;
                         if let Ok(response_str) = serde_json::to_string(&response) {
-                            if sender.send(Message::Text(response_str.into())).await.is_err() {
+                            if sender
+                                .send(Message::Text(response_str.into()))
+                                .await
+                                .is_err()
+                            {
                                 break;
                             }
                         }

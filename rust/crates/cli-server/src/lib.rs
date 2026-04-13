@@ -8,11 +8,14 @@ use tokio::sync::Mutex;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
-mod ws_handler;
-mod rest_handler;
 mod agent_manager;
+mod chat_handler;
+mod rest_handler;
+mod runtime;
+mod ws_handler;
 
 pub use agent_manager::AgentManager;
+use runtime::{create_runtime, ClawRuntime};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
@@ -31,8 +34,31 @@ impl Default for ServerConfig {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct AppState {
     pub agent_manager: Arc<Mutex<AgentManager>>,
+    pub runtime: Option<ClawRuntime>,
+}
+
+impl AppState {
+    pub fn new() -> Self {
+        let runtime = create_runtime().ok();
+        if runtime.is_some() {
+            tracing::info!("ClawRuntime initialized successfully");
+        } else {
+            tracing::warn!("Failed to initialize ClawRuntime - runtime features will be limited");
+        }
+        Self {
+            agent_manager: Arc::new(Mutex::new(AgentManager::new())),
+            runtime,
+        }
+    }
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub async fn run_server(config: ServerConfig) -> Result<(), Box<dyn std::error::Error>> {
@@ -40,19 +66,42 @@ pub async fn run_server(config: ServerConfig) -> Result<(), Box<dyn std::error::
         .with_env_filter("cli_server=debug,tower_http=debug")
         .init();
 
-    let agent_manager = Arc::new(Mutex::new(AgentManager::new()));
-    let state = Arc::new(AppState {
-        agent_manager: agent_manager.clone(),
-    });
+    let state = Arc::new(AppState::new());
+
+    if state.runtime.is_none() {
+        tracing::error!("CRITICAL: Runtime unavailable - messages cannot be processed");
+    }
 
     let app = Router::new()
         .route("/api/health", get(rest_handler::health_check))
         .route("/api/agents", get(rest_handler::list_agents))
         .route("/api/agents/{id}", get(rest_handler::get_agent))
-        .route("/api/tasks", get(rest_handler::list_tasks).post(rest_handler::create_task))
-        .route("/api/tasks/{id}", get(rest_handler::get_task).delete(rest_handler::cancel_task))
-        .route("/api/config", get(rest_handler::get_config).put(rest_handler::update_config))
+        .route(
+            "/api/tasks",
+            get(rest_handler::list_tasks).post(rest_handler::create_task),
+        )
+        .route(
+            "/api/tasks/{id}",
+            get(rest_handler::get_task).delete(rest_handler::cancel_task),
+        )
+        .route(
+            "/api/config",
+            get(rest_handler::get_config).put(rest_handler::update_config),
+        )
         .route("/api/deploy", post(rest_handler::deploy_remote))
+        .route("/api/chat", post(chat_handler::chat_message))
+        .route(
+            "/api/sessions",
+            get(rest_handler::list_sessions).post(rest_handler::create_session),
+        )
+        .route(
+            "/api/sessions/{id}",
+            get(rest_handler::get_session).delete(rest_handler::delete_session),
+        )
+        .route(
+            "/api/sessions/{id}/switch",
+            post(rest_handler::switch_session),
+        )
         .route("/ws", get(ws_handler::ws_handler))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())

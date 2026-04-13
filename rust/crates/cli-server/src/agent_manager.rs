@@ -44,15 +44,25 @@ pub struct TaskInfo {
     pub completed_at: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct AgentManager {
     agents: HashMap<String, AgentInfo>,
     tasks: HashMap<String, TaskInfo>,
 }
 
+impl Clone for AgentManager {
+    fn clone(&self) -> Self {
+        Self {
+            agents: self.agents.clone(),
+            tasks: self.tasks.clone(),
+        }
+    }
+}
+
 impl AgentManager {
     pub fn new() -> Self {
         let mut agents = HashMap::new();
-        
+
         let leader = AgentInfo {
             id: "leader-default".to_string(),
             name: "Leader Agent".to_string(),
@@ -72,7 +82,10 @@ impl AgentManager {
         };
         agents.insert(leader.id.clone(), leader);
 
-        Self { agents, tasks: HashMap::new() }
+        Self {
+            agents,
+            tasks: HashMap::new(),
+        }
     }
 
     pub fn list_agents(&self) -> Vec<&AgentInfo> {
@@ -94,18 +107,38 @@ impl AgentManager {
     pub fn create_task(&mut self, request: Value) -> Value {
         let id = format!("task-{}", Uuid::new_v4());
         let now = chrono::Utc::now().to_rfc3339();
-        
+
         let task = TaskInfo {
             id: id.clone(),
-            name: request.get("name").and_then(|v| v.as_str()).unwrap_or("Unnamed Task").to_string(),
-            description: request.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            name: request
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unnamed Task")
+                .to_string(),
+            description: request
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             status: "pending".to_string(),
-            priority: request.get("priority").and_then(|v| v.as_str()).unwrap_or("medium").to_string(),
-            assigned_agent: request.get("assignedAgent").and_then(|v| v.as_str()).map(String::from),
+            priority: request
+                .get("priority")
+                .and_then(|v| v.as_str())
+                .unwrap_or("medium")
+                .to_string(),
+            assigned_agent: request
+                .get("assignedAgent")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             progress: 0.0,
-            dependencies: request.get("dependencies")
+            dependencies: request
+                .get("dependencies")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default(),
             created_at: now,
             started_at: None,
