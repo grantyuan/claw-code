@@ -42,12 +42,17 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Self {
-        let runtime = create_runtime().ok();
-        if runtime.is_some() {
-            tracing::info!("ClawRuntime initialized successfully");
-        } else {
-            tracing::warn!("Failed to initialize ClawRuntime - runtime features will be limited");
-        }
+        let runtime = match create_runtime() {
+            Ok(r) => {
+                tracing::info!("ClawRuntime initialized successfully");
+                Some(r)
+            }
+            Err(e) => {
+                tracing::error!("Failed to initialize ClawRuntime: {}", e);
+                tracing::error!("Set ANTHROPIC_API_KEY or other provider credentials to enable runtime");
+                None
+            }
+        };
         Self {
             agent_manager: Arc::new(Mutex::new(AgentManager::new())),
             runtime,

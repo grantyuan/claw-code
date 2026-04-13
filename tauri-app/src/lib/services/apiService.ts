@@ -59,6 +59,10 @@ class ApiService {
     return this.post('/api/chat', { content, conversation_id: conversationId, model, provider });
   }
 
+  async checkHealth(): Promise<any> {
+    return this.get('/api/health');
+  }
+
   async listSessions(): Promise<any> {
     return this.get('/api/sessions');
   }
