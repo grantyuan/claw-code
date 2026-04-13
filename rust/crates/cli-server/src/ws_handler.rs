@@ -85,11 +85,39 @@ async fn handle_message(msg: &WsMessage, state: &Arc<AppState>) -> WsMessage {
             payload: json!({}),
             timestamp: chrono::Utc::now().to_rfc3339(),
         },
-        "send_message" => WsMessage {
-            msg_type: "system_notification".to_string(),
-            payload: json!({ "message": "Message received", "original": msg.payload }),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        },
+        "send_message" => {
+            if let Some(runtime) = state.runtime.as_ref() {
+                let content = msg
+                    .payload
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let session_id = msg
+                    .payload
+                    .get("session_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("default");
+
+                match runtime.send_message(session_id, content).await {
+                    Ok(response) => WsMessage {
+                        msg_type: "message_response".to_string(),
+                        payload: json!({ "content": response }),
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    },
+                    Err(e) => WsMessage {
+                        msg_type: "error".to_string(),
+                        payload: json!({ "message": format!("Failed to process message: {}", e) }),
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    },
+                }
+            } else {
+                WsMessage {
+                    msg_type: "error".to_string(),
+                    payload: json!({ "message": "Runtime not available - messages must be routed through claw runtime" }),
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                }
+            }
+        }
         "create_task" => {
             let mut manager = state.agent_manager.lock().await;
             let task = manager.create_task(msg.payload.clone());
