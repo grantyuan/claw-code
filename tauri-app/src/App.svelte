@@ -35,8 +35,16 @@
     };
     connectionStore.addConnection(localConnection);
 
-    const isHealthy = await runtimeStore.checkHealth();
-    if (!isHealthy) {
+    console.log('[App] Checking runtime health...');
+    try {
+      const isHealthy = await runtimeStore.checkHealth();
+      console.log('[App] Runtime health check result:', isHealthy, $runtimeStore);
+      if (!isHealthy) {
+        console.log('[App] Runtime unavailable, showing error modal');
+        showRuntimeError = true;
+      }
+    } catch (e) {
+      console.error('[App] Health check failed:', e);
       showRuntimeError = true;
     }
   });

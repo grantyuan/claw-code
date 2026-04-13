@@ -3,8 +3,10 @@ import { apiService } from '$services/apiService';
 
 interface RuntimeHealth {
   status: string;
-  runtimeAvailable: boolean;
-  sessionCount: number;
+  runtime: {
+    available: boolean;
+    session_count: number;
+  };
 }
 
 interface RuntimeState {
@@ -28,7 +30,7 @@ function createRuntimeStore() {
     async checkHealth() {
       try {
         const health = await apiService.checkHealth() as RuntimeHealth;
-        const isHealthy = health?.runtimeAvailable === true;
+        const isHealthy = health?.runtime?.available === true;
         update(state => ({
           ...state,
           isHealthy,
