@@ -55,8 +55,28 @@ class ApiService {
     return response.json();
   }
 
-  async sendMessage(content: string, conversationId: string): Promise<void> {
-    await this.post('/api/chat/message', { content, conversationId });
+  async sendMessage(content: string, conversationId: string, model?: string, provider?: string): Promise<any> {
+    return this.post('/api/chat', { content, conversation_id: conversationId, model, provider });
+  }
+
+  async listSessions(): Promise<any> {
+    return this.get('/api/sessions');
+  }
+
+  async createSession(projectPath: string, name?: string): Promise<any> {
+    return this.post('/api/sessions', { project_path: projectPath, name });
+  }
+
+  async getSession(sessionId: string): Promise<any> {
+    return this.get(`/api/sessions/${sessionId}`);
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.delete(`/api/sessions/${sessionId}`);
+  }
+
+  async switchSession(sessionId: string): Promise<any> {
+    return this.post(`/api/sessions/${sessionId}/switch`, {});
   }
 
   async getAgents(): Promise<any[]> {

@@ -11,3 +11,6 @@ export type { ConnectionInfo, WebSocketMessage, ConnectionHealth } from './conne
 
 export { MessageType } from './message';
 export type { Message, MessageMetadata, CodeBlock, StreamChunk, Conversation } from './message';
+
+export type { Session, RuntimeError, HealthStatus, SessionStatus } from './session';
+export { RuntimeErrorType } from './session';
