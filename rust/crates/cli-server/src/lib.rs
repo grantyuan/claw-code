@@ -10,6 +10,7 @@ use tower_http::trace::TraceLayer;
 
 mod agent_manager;
 mod chat_handler;
+mod chat_history_commands;
 mod rest_handler;
 mod runtime;
 mod ws_handler;

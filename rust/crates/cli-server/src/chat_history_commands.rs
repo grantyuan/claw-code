@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use tauri::command;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExportOptions {
@@ -18,7 +17,6 @@ pub struct BatchOperationResult {
     pub failed: usize,
 }
 
-#[command]
 pub async fn export_conversation(
     conversation_id: String,
     format: String,
@@ -27,7 +25,6 @@ pub async fn export_conversation(
     Ok(format!("Exported {} as {}", conversation_id, format))
 }
 
-#[command]
 pub async fn batch_operations(
     action: String,
     ids: Vec<String>,
