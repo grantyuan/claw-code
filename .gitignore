@@ -8,3 +8,8 @@ archive/
 # Worktrees
 .worktrees/
 tauri-app/test-results/
+# Claw Code local artifacts
+.claw/settings.local.json
+.claw/sessions/
+.clawhip/
+status-help.txt

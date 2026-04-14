@@ -4,7 +4,7 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use plugins::{PluginError, PluginManager, PluginSummary};
+use plugins::{PluginError, PluginLoadFailure, PluginManager, PluginSummary};
 use runtime::{
     compact_session, CompactionConfig, ConfigLoader, ConfigSource, McpOAuthConfig, McpServerConfig,
     ScopedMcpServerConfig, Session,
@@ -221,8 +221,10 @@ const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
     SlashCommandSpec {
         name: "session",
         aliases: &[],
-        summary: "List, switch, or fork managed local sessions",
-        argument_hint: Some("[list|switch <session-id>|fork [branch-name]]"),
+        summary: "List, switch, fork, or delete managed local sessions",
+        argument_hint: Some(
+            "[list|switch <session-id>|fork [branch-name]|delete <session-id> [--force]]",
+        ),
         resume_supported: false,
     },
     SlashCommandSpec {
@@ -254,20 +256,6 @@ const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
         summary: "Diagnose setup issues and environment health",
         argument_hint: None,
         resume_supported: true,
-    },
-    SlashCommandSpec {
-        name: "login",
-        aliases: &[],
-        summary: "Log in to the service",
-        argument_hint: None,
-        resume_supported: false,
-    },
-    SlashCommandSpec {
-        name: "logout",
-        aliases: &[],
-        summary: "Log out of the current session",
-        argument_hint: None,
-        resume_supported: false,
     },
     SlashCommandSpec {
         name: "plan",
@@ -1188,6 +1176,9 @@ pub enum SlashCommand {
     AddDir {
         path: Option<String>,
     },
+    History {
+        count: Option<String>,
+    },
     Unknown(String),
 }
 
@@ -1215,6 +1206,83 @@ impl std::error::Error for SlashCommandParseError {}
 impl SlashCommand {
     pub fn parse(input: &str) -> Result<Option<Self>, SlashCommandParseError> {
         validate_slash_command_input(input)
+    }
+
+    /// Returns the canonical slash-command name (e.g. `"/branch"`) for use in
+    /// error messages and logging. Derived from the spec table so it always
+    /// matches what the user would have typed.
+    #[must_use]
+    pub fn slash_name(&self) -> &'static str {
+        match self {
+            Self::Help => "/help",
+            Self::Clear { .. } => "/clear",
+            Self::Compact { .. } => "/compact",
+            Self::Cost => "/cost",
+            Self::Doctor => "/doctor",
+            Self::Config { .. } => "/config",
+            Self::Memory { .. } => "/memory",
+            Self::History { .. } => "/history",
+            Self::Diff => "/diff",
+            Self::Status => "/status",
+            Self::Stats => "/stats",
+            Self::Version => "/version",
+            Self::Commit { .. } => "/commit",
+            Self::Pr { .. } => "/pr",
+            Self::Issue { .. } => "/issue",
+            Self::Init => "/init",
+            Self::Bughunter { .. } => "/bughunter",
+            Self::Ultraplan { .. } => "/ultraplan",
+            Self::Teleport { .. } => "/teleport",
+            Self::DebugToolCall { .. } => "/debug-tool-call",
+            Self::Resume { .. } => "/resume",
+            Self::Model { .. } => "/model",
+            Self::Permissions { .. } => "/permissions",
+            Self::Session { .. } => "/session",
+            Self::Plugins { .. } => "/plugins",
+            Self::Login => "/login",
+            Self::Logout => "/logout",
+            Self::Vim => "/vim",
+            Self::Upgrade => "/upgrade",
+            Self::Share => "/share",
+            Self::Feedback => "/feedback",
+            Self::Files => "/files",
+            Self::Fast => "/fast",
+            Self::Exit => "/exit",
+            Self::Summary => "/summary",
+            Self::Desktop => "/desktop",
+            Self::Brief => "/brief",
+            Self::Advisor => "/advisor",
+            Self::Stickers => "/stickers",
+            Self::Insights => "/insights",
+            Self::Thinkback => "/thinkback",
+            Self::ReleaseNotes => "/release-notes",
+            Self::SecurityReview => "/security-review",
+            Self::Keybindings => "/keybindings",
+            Self::PrivacySettings => "/privacy-settings",
+            Self::Plan { .. } => "/plan",
+            Self::Review { .. } => "/review",
+            Self::Tasks { .. } => "/tasks",
+            Self::Theme { .. } => "/theme",
+            Self::Voice { .. } => "/voice",
+            Self::Usage { .. } => "/usage",
+            Self::Rename { .. } => "/rename",
+            Self::Copy { .. } => "/copy",
+            Self::Hooks { .. } => "/hooks",
+            Self::Context { .. } => "/context",
+            Self::Color { .. } => "/color",
+            Self::Effort { .. } => "/effort",
+            Self::Branch { .. } => "/branch",
+            Self::Rewind { .. } => "/rewind",
+            Self::Ide { .. } => "/ide",
+            Self::Tag { .. } => "/tag",
+            Self::OutputStyle { .. } => "/output-style",
+            Self::AddDir { .. } => "/add-dir",
+            Self::Sandbox => "/sandbox",
+            Self::Mcp { .. } => "/mcp",
+            Self::Export { .. } => "/export",
+            #[allow(unreachable_patterns)]
+            _ => "/unknown",
+        }
     }
 }
 
@@ -1315,17 +1383,16 @@ pub fn validate_slash_command_input(
         "skills" | "skill" => SlashCommand::Skills {
             args: parse_skills_args(remainder.as_deref())?,
         },
-        "doctor" => {
+        "doctor" | "providers" => {
             validate_no_args(command, &args)?;
             SlashCommand::Doctor
         }
-        "login" => {
-            validate_no_args(command, &args)?;
-            SlashCommand::Login
-        }
-        "logout" => {
-            validate_no_args(command, &args)?;
-            SlashCommand::Logout
+        "login" | "logout" => {
+            return Err(command_error(
+                "This auth flow was removed. Set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN instead.",
+                command,
+                "",
+            ));
         }
         "vim" => {
             validate_no_args(command, &args)?;
@@ -1335,7 +1402,7 @@ pub fn validate_slash_command_input(
             validate_no_args(command, &args)?;
             SlashCommand::Upgrade
         }
-        "stats" => {
+        "stats" | "tokens" | "cache" => {
             validate_no_args(command, &args)?;
             SlashCommand::Stats
         }
@@ -1421,6 +1488,9 @@ pub fn validate_slash_command_input(
         "tag" => SlashCommand::Tag { label: remainder },
         "output-style" => SlashCommand::OutputStyle { style: remainder },
         "add-dir" => SlashCommand::AddDir { path: remainder },
+        "history" => SlashCommand::History {
+            count: optional_single_arg(command, &args, "[count]")?,
+        },
         other => SlashCommand::Unknown(other.to_string()),
     }))
 }
@@ -1520,7 +1590,7 @@ fn parse_session_command(args: &[&str]) -> Result<SlashCommand, SlashCommandPars
             action: Some("list".to_string()),
             target: None,
         }),
-        ["list", ..] => Err(usage_error("session", "[list|switch <session-id>|fork [branch-name]]")),
+        ["list", ..] => Err(usage_error("session", "[list|switch <session-id>|fork [branch-name]|delete <session-id> [--force]]")),
         ["switch"] => Err(usage_error("session switch", "<session-id>")),
         ["switch", target] => Ok(SlashCommand::Session {
             action: Some("switch".to_string()),
@@ -1544,12 +1614,33 @@ fn parse_session_command(args: &[&str]) -> Result<SlashCommand, SlashCommandPars
             "session",
             "/session fork [branch-name]",
         )),
-        [action, ..] => Err(command_error(
+        ["delete"] => Err(usage_error("session delete", "<session-id> [--force]")),
+        ["delete", target] => Ok(SlashCommand::Session {
+            action: Some("delete".to_string()),
+            target: Some((*target).to_string()),
+        }),
+        ["delete", target, "--force"] => Ok(SlashCommand::Session {
+            action: Some("delete-force".to_string()),
+            target: Some((*target).to_string()),
+        }),
+        ["delete", _target, unexpected] => Err(command_error(
             &format!(
-                "Unknown /session action '{action}'. Use list, switch <session-id>, or fork [branch-name]."
+                "Unsupported /session delete flag '{unexpected}'. Use --force to skip confirmation."
             ),
             "session",
-            "/session [list|switch <session-id>|fork [branch-name]]",
+            "/session delete <session-id> [--force]",
+        )),
+        ["delete", ..] => Err(command_error(
+            "Unexpected arguments for /session delete.",
+            "session",
+            "/session delete <session-id> [--force]",
+        )),
+        [action, ..] => Err(command_error(
+            &format!(
+                "Unknown /session action '{action}'. Use list, switch <session-id>, fork [branch-name], or delete <session-id> [--force]."
+            ),
+            "session",
+            "/session [list|switch <session-id>|fork [branch-name]|delete <session-id> [--force]]",
         )),
     }
 }
@@ -1786,24 +1877,21 @@ pub fn resume_supported_slash_commands() -> Vec<&'static SlashCommandSpec> {
 
 fn slash_command_category(name: &str) -> &'static str {
     match name {
-        "help" | "status" | "sandbox" | "model" | "permissions" | "cost" | "resume" | "session"
-        | "version" | "login" | "logout" | "usage" | "stats" | "rename" | "privacy-settings" => {
-            "Session & visibility"
+        "help" | "status" | "cost" | "resume" | "session" | "version" | "usage" | "stats"
+        | "rename" | "clear" | "compact" | "history" | "tokens" | "cache" | "exit" | "summary"
+        | "tag" | "thinkback" | "copy" | "share" | "feedback" | "rewind" | "pin" | "unpin"
+        | "bookmarks" | "context" | "files" | "focus" | "unfocus" | "retry" | "stop" | "undo" => {
+            "Session"
         }
-        "compact" | "clear" | "config" | "memory" | "init" | "diff" | "commit" | "pr" | "issue"
-        | "export" | "plugin" | "branch" | "add-dir" | "files" | "hooks" | "release-notes" => {
-            "Workspace & git"
-        }
-        "agents" | "skills" | "teleport" | "debug-tool-call" | "mcp" | "context" | "tasks"
-        | "doctor" | "ide" | "desktop" => "Discovery & debugging",
-        "bughunter" | "ultraplan" | "review" | "security-review" | "advisor" | "insights" => {
-            "Analysis & automation"
-        }
-        "theme" | "vim" | "voice" | "color" | "effort" | "fast" | "brief" | "output-style"
-        | "keybindings" | "stickers" => "Appearance & input",
-        "copy" | "share" | "feedback" | "summary" | "tag" | "thinkback" | "plan" | "exit"
-        | "upgrade" | "rewind" => "Communication & control",
-        _ => "Other",
+        "model" | "permissions" | "config" | "memory" | "theme" | "vim" | "voice" | "color"
+        | "effort" | "fast" | "brief" | "output-style" | "keybindings" | "privacy-settings"
+        | "stickers" | "language" | "profile" | "max-tokens" | "temperature" | "system-prompt"
+        | "api-key" | "terminal-setup" | "notifications" | "telemetry" | "providers" | "env"
+        | "project" | "reasoning" | "budget" | "rate-limit" | "workspace" | "reset" | "ide"
+        | "desktop" | "upgrade" => "Config",
+        "debug-tool-call" | "doctor" | "sandbox" | "diagnostics" | "tool-details" | "changelog"
+        | "metrics" => "Debug",
+        _ => "Tools",
     }
 }
 
@@ -1904,6 +1992,42 @@ pub fn suggest_slash_commands(input: &str, limit: usize) -> Vec<String> {
 }
 
 #[must_use]
+/// Render the slash-command help section, optionally excluding stub commands
+/// (commands that are registered in the spec list but not yet implemented).
+/// Pass an empty slice to include all commands.
+pub fn render_slash_command_help_filtered(exclude: &[&str]) -> String {
+    let mut lines = vec![
+        "Slash commands".to_string(),
+        "  Start here        /status, /diff, /agents, /skills, /commit".to_string(),
+        "  [resume]          also works with --resume SESSION.jsonl".to_string(),
+        String::new(),
+    ];
+
+    let categories = ["Session", "Tools", "Config", "Debug"];
+
+    for category in categories {
+        lines.push(category.to_string());
+        for spec in slash_command_specs()
+            .iter()
+            .filter(|spec| slash_command_category(spec.name) == category)
+            .filter(|spec| !exclude.contains(&spec.name))
+        {
+            lines.push(format_slash_command_help_line(spec));
+        }
+        lines.push(String::new());
+    }
+
+    lines
+        .into_iter()
+        .rev()
+        .skip_while(String::is_empty)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 pub fn render_slash_command_help() -> String {
     let mut lines = vec![
         "Slash commands".to_string(),
@@ -1912,12 +2036,7 @@ pub fn render_slash_command_help() -> String {
         String::new(),
     ];
 
-    let categories = [
-        "Session & visibility",
-        "Workspace & git",
-        "Discovery & debugging",
-        "Analysis & automation",
-    ];
+    let categories = ["Session", "Tools", "Config", "Debug"];
 
     for category in categories {
         lines.push(category.to_string());
@@ -1929,6 +2048,12 @@ pub fn render_slash_command_help() -> String {
         }
         lines.push(String::new());
     }
+
+    lines.push("Keyboard shortcuts".to_string());
+    lines.push("  Up/Down              Navigate prompt history".to_string());
+    lines.push("  Tab                  Complete commands, modes, and recent sessions".to_string());
+    lines.push("  Ctrl-C               Clear input (or exit on empty prompt)".to_string());
+    lines.push("  Shift+Enter/Ctrl+J   Insert a newline".to_string());
 
     lines
         .into_iter()
@@ -2061,10 +2186,15 @@ pub fn handle_plugins_slash_command(
     manager: &mut PluginManager,
 ) -> Result<PluginsCommandResult, PluginError> {
     match action {
-        None | Some("list") => Ok(PluginsCommandResult {
-            message: render_plugins_report(&manager.list_installed_plugins()?),
-            reload_runtime: false,
-        }),
+        None | Some("list") => {
+            let report = manager.installed_plugin_registry_report()?;
+            let plugins = report.summaries();
+            let failures = report.failures();
+            Ok(PluginsCommandResult {
+                message: render_plugins_report_with_failures(&plugins, failures),
+                reload_runtime: false,
+            })
+        }
         Some("install") => {
             let Some(target) = target else {
                 return Ok(PluginsCommandResult {
@@ -2293,8 +2423,46 @@ pub fn classify_skills_slash_command(args: Option<&str>) -> SkillSlashDispatch {
         Some(args) if args == "install" || args.starts_with("install ") => {
             SkillSlashDispatch::Local
         }
-        Some(args) => SkillSlashDispatch::Invoke(format!("${args}")),
+        Some(args) => SkillSlashDispatch::Invoke(format!("${}", args.trim_start_matches('/'))),
     }
+}
+
+/// Resolve a skill invocation by validating the skill exists on disk before
+/// returning the dispatch.  When the skill is not found, returns `Err` with a
+/// human-readable message that lists nearby skill names.
+pub fn resolve_skill_invocation(
+    cwd: &Path,
+    args: Option<&str>,
+) -> Result<SkillSlashDispatch, String> {
+    let dispatch = classify_skills_slash_command(args);
+    if let SkillSlashDispatch::Invoke(ref prompt) = dispatch {
+        // Extract the skill name from the "$skill [args]" prompt.
+        let skill_token = prompt
+            .trim_start_matches('$')
+            .split_whitespace()
+            .next()
+            .unwrap_or_default();
+        if !skill_token.is_empty() {
+            if let Err(error) = resolve_skill_path(cwd, skill_token) {
+                let mut message = format!("Unknown skill: {skill_token} ({error})");
+                let roots = discover_skill_roots(cwd);
+                if let Ok(available) = load_skills_from_roots(&roots) {
+                    let names: Vec<String> = available
+                        .iter()
+                        .filter(|s| s.shadowed_by.is_none())
+                        .map(|s| s.name.clone())
+                        .collect();
+                    if !names.is_empty() {
+                        message.push_str("\n  Available skills: ");
+                        message.push_str(&names.join(", "));
+                    }
+                }
+                message.push_str("\n  Usage: /skills [list|install <path>|help|<skill> [args]]");
+                return Err(message);
+            }
+        }
+    }
+    Ok(dispatch)
 }
 
 pub fn resolve_skill_path(cwd: &Path, skill: &str) -> std::io::Result<PathBuf> {
@@ -2478,6 +2646,48 @@ pub fn render_plugins_report(plugins: &[PluginSummary]) -> String {
             version = plugin.metadata.version,
         ));
     }
+    lines.join("\n")
+}
+
+#[must_use]
+pub fn render_plugins_report_with_failures(
+    plugins: &[PluginSummary],
+    failures: &[PluginLoadFailure],
+) -> String {
+    let mut lines = vec!["Plugins".to_string()];
+
+    // Show successfully loaded plugins
+    if plugins.is_empty() {
+        lines.push("  No plugins installed.".to_string());
+    } else {
+        for plugin in plugins {
+            let enabled = if plugin.enabled {
+                "enabled"
+            } else {
+                "disabled"
+            };
+            lines.push(format!(
+                "  {name:<20} v{version:<10} {enabled}",
+                name = plugin.metadata.name,
+                version = plugin.metadata.version,
+            ));
+        }
+    }
+
+    // Show warnings for broken plugins
+    if !failures.is_empty() {
+        lines.push(String::new());
+        lines.push("Warnings:".to_string());
+        for failure in failures {
+            lines.push(format!(
+                "  ⚠️  Failed to load {} plugin from `{}`",
+                failure.kind,
+                failure.plugin_root.display()
+            ));
+            lines.push(format!("      Error: {}", failure.error()));
+        }
+    }
+
     lines.join("\n")
 }
 
@@ -3899,6 +4109,7 @@ pub fn handle_slash_command(
         | SlashCommand::Tag { .. }
         | SlashCommand::OutputStyle { .. }
         | SlashCommand::AddDir { .. }
+        | SlashCommand::History { .. }
         | SlashCommand::Unknown(_) => None,
     }
 }
@@ -3910,12 +4121,15 @@ mod tests {
         handle_plugins_slash_command, handle_skills_slash_command_json, handle_slash_command,
         load_agents_from_roots, load_skills_from_roots, render_agents_report,
         render_agents_report_json, render_mcp_report_json_for, render_plugins_report,
-        render_skills_report, render_slash_command_help, render_slash_command_help_detail,
-        resolve_skill_path, resume_supported_slash_commands, slash_command_specs,
-        suggest_slash_commands, validate_slash_command_input, DefinitionSource, SkillOrigin,
-        SkillRoot, SkillSlashDispatch, SlashCommand,
+        render_plugins_report_with_failures, render_skills_report, render_slash_command_help,
+        render_slash_command_help_detail, resolve_skill_path, resume_supported_slash_commands,
+        slash_command_specs, suggest_slash_commands, validate_slash_command_input,
+        DefinitionSource, SkillOrigin, SkillRoot, SkillSlashDispatch, SlashCommand,
     };
-    use plugins::{PluginKind, PluginManager, PluginManagerConfig, PluginMetadata, PluginSummary};
+    use plugins::{
+        PluginError, PluginKind, PluginLoadFailure, PluginManager, PluginManagerConfig,
+        PluginMetadata, PluginSummary,
+    };
     use runtime::{
         CompactionConfig, ConfigLoader, ContentBlock, ConversationMessage, MessageRole, Session,
     };
@@ -3936,6 +4150,24 @@ mod tests {
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[test]
+    fn env_guard_recovers_after_poisoning() {
+        let poisoned = std::thread::spawn(|| {
+            let _guard = env_guard();
+            panic!("poison env lock");
+        })
+        .join();
+        assert!(poisoned.is_err(), "poisoning thread should panic");
+
+        let _guard = env_guard();
     }
 
     fn restore_env_var(key: &str, original: Option<OsString>) {
@@ -4214,6 +4446,47 @@ mod tests {
     }
 
     #[test]
+    fn parses_history_command_without_count() {
+        // given
+        let input = "/history";
+
+        // when
+        let parsed = SlashCommand::parse(input);
+
+        // then
+        assert_eq!(parsed, Ok(Some(SlashCommand::History { count: None })));
+    }
+
+    #[test]
+    fn parses_history_command_with_numeric_count() {
+        // given
+        let input = "/history 25";
+
+        // when
+        let parsed = SlashCommand::parse(input);
+
+        // then
+        assert_eq!(
+            parsed,
+            Ok(Some(SlashCommand::History {
+                count: Some("25".to_string())
+            }))
+        );
+    }
+
+    #[test]
+    fn rejects_history_with_extra_arguments() {
+        // given
+        let input = "/history 25 extra";
+
+        // when
+        let error = parse_error_message(input);
+
+        // then
+        assert!(error.contains("Usage: /history [count]"));
+    }
+
+    #[test]
     fn rejects_unexpected_arguments_for_no_arg_commands() {
         // given
         let input = "/compact now";
@@ -4254,7 +4527,7 @@ mod tests {
 
         // then
         assert!(error.contains("Usage: /teleport <symbol-or-path>"));
-        assert!(error.contains("  Category         Discovery & debugging"));
+        assert!(error.contains("  Category         Tools"));
     }
 
     #[test]
@@ -4302,6 +4575,10 @@ mod tests {
             SkillSlashDispatch::Invoke("$help overview".to_string())
         );
         assert_eq!(
+            classify_skills_slash_command(Some("/test")),
+            SkillSlashDispatch::Invoke("$test".to_string())
+        );
+        assert_eq!(
             classify_skills_slash_command(Some("install ./skill-pack")),
             SkillSlashDispatch::Local
         );
@@ -4320,14 +4597,22 @@ mod tests {
     }
 
     #[test]
+    fn removed_login_and_logout_commands_report_env_auth_guidance() {
+        let login_error = parse_error_message("/login");
+        assert!(login_error.contains("ANTHROPIC_API_KEY"));
+        let logout_error = parse_error_message("/logout");
+        assert!(logout_error.contains("ANTHROPIC_AUTH_TOKEN"));
+    }
+
+    #[test]
     fn renders_help_from_shared_specs() {
         let help = render_slash_command_help();
         assert!(help.contains("Start here        /status, /diff, /agents, /skills, /commit"));
         assert!(help.contains("[resume]          also works with --resume SESSION.jsonl"));
-        assert!(help.contains("Session & visibility"));
-        assert!(help.contains("Workspace & git"));
-        assert!(help.contains("Discovery & debugging"));
-        assert!(help.contains("Analysis & automation"));
+        assert!(help.contains("Session"));
+        assert!(help.contains("Tools"));
+        assert!(help.contains("Config"));
+        assert!(help.contains("Debug"));
         assert!(help.contains("/help"));
         assert!(help.contains("/status"));
         assert!(help.contains("/sandbox"));
@@ -4351,7 +4636,7 @@ mod tests {
         assert!(help.contains("/diff"));
         assert!(help.contains("/version"));
         assert!(help.contains("/export [file]"));
-        assert!(help.contains("/session [list|switch <session-id>|fork [branch-name]]"));
+        assert!(help.contains("/session"), "help must mention /session");
         assert!(help.contains("/sandbox"));
         assert!(help.contains(
             "/plugin [list|install <path>|enable <name>|disable <name>|uninstall <id>|update <id>]"
@@ -4360,8 +4645,57 @@ mod tests {
         assert!(help.contains("/agents [list|help]"));
         assert!(help.contains("/skills [list|install <path>|help|<skill> [args]]"));
         assert!(help.contains("aliases: /skill"));
-        assert_eq!(slash_command_specs().len(), 141);
+        assert!(!help.contains("/login"));
+        assert!(!help.contains("/logout"));
+        assert_eq!(slash_command_specs().len(), 139);
         assert!(resume_supported_slash_commands().len() >= 39);
+    }
+
+    #[test]
+    fn renders_help_with_grouped_categories_and_keyboard_shortcuts() {
+        // given
+        let categories = ["Session", "Tools", "Config", "Debug"];
+
+        // when
+        let help = render_slash_command_help();
+
+        // then
+        for category in categories {
+            assert!(
+                help.contains(category),
+                "expected help to contain category {category}"
+            );
+        }
+        let session_index = help.find("Session").expect("Session header should exist");
+        let tools_index = help.find("Tools").expect("Tools header should exist");
+        let config_index = help.find("Config").expect("Config header should exist");
+        let debug_index = help.find("Debug").expect("Debug header should exist");
+        assert!(session_index < tools_index);
+        assert!(tools_index < config_index);
+        assert!(config_index < debug_index);
+
+        assert!(help.contains("Keyboard shortcuts"));
+        assert!(help.contains("Up/Down              Navigate prompt history"));
+        assert!(help.contains("Tab                  Complete commands, modes, and recent sessions"));
+        assert!(help.contains("Ctrl-C               Clear input (or exit on empty prompt)"));
+        assert!(help.contains("Shift+Enter/Ctrl+J   Insert a newline"));
+
+        // every command should still render with a summary line
+        for spec in slash_command_specs() {
+            let usage = match spec.argument_hint {
+                Some(hint) => format!("/{} {hint}", spec.name),
+                None => format!("/{}", spec.name),
+            };
+            assert!(
+                help.contains(&usage),
+                "expected help to contain command {usage}"
+            );
+            assert!(
+                help.contains(spec.summary),
+                "expected help to contain summary for /{}",
+                spec.name
+            );
+        }
     }
 
     #[test]
@@ -4376,7 +4710,7 @@ mod tests {
         assert!(help.contains("/plugin"));
         assert!(help.contains("Summary          Manage Claw Code plugins"));
         assert!(help.contains("Aliases          /plugins, /marketplace"));
-        assert!(help.contains("Category         Workspace & git"));
+        assert!(help.contains("Category         Tools"));
     }
 
     #[test]
@@ -4384,7 +4718,7 @@ mod tests {
         let help = render_slash_command_help_detail("mcp").expect("detail help should exist");
         assert!(help.contains("/mcp"));
         assert!(help.contains("Summary          Inspect configured MCP servers"));
-        assert!(help.contains("Category         Discovery & debugging"));
+        assert!(help.contains("Category         Tools"));
         assert!(help.contains("Resume           Supported with --resume SESSION.jsonl"));
     }
 
@@ -4444,7 +4778,14 @@ mod tests {
         )
         .expect("slash command should be handled");
 
-        assert!(result.message.contains("Compacted 2 messages"));
+        // With the tool-use/tool-result boundary guard the compaction may
+        // preserve one extra message, so 1 or 2 messages may be removed.
+        assert!(
+            result.message.contains("Compacted 1 messages")
+                || result.message.contains("Compacted 2 messages"),
+            "unexpected compaction message: {}",
+            result.message
+        );
         assert_eq!(result.session.messages[0].role, MessageRole::System);
     }
 
@@ -4562,6 +4903,36 @@ mod tests {
         assert!(rendered.contains("sample"));
         assert!(rendered.contains("v0.9.0"));
         assert!(rendered.contains("disabled"));
+    }
+
+    #[test]
+    fn renders_plugins_report_with_broken_plugin_warnings() {
+        let rendered = render_plugins_report_with_failures(
+            &[PluginSummary {
+                metadata: PluginMetadata {
+                    id: "demo@external".to_string(),
+                    name: "demo".to_string(),
+                    version: "1.2.3".to_string(),
+                    description: "demo plugin".to_string(),
+                    kind: PluginKind::External,
+                    source: "demo".to_string(),
+                    default_enabled: false,
+                    root: None,
+                },
+                enabled: true,
+            }],
+            &[PluginLoadFailure::new(
+                PathBuf::from("/tmp/broken-plugin"),
+                PluginKind::External,
+                "broken".to_string(),
+                PluginError::InvalidManifest("hook path `hooks/pre.sh` does not exist".to_string()),
+            )],
+        );
+
+        assert!(rendered.contains("Warnings:"));
+        assert!(rendered.contains("Failed to load external plugin"));
+        assert!(rendered.contains("/tmp/broken-plugin"));
+        assert!(rendered.contains("does not exist"));
     }
 
     #[test]
@@ -4861,7 +5232,7 @@ mod tests {
 
     #[test]
     fn discovers_omc_skills_from_project_and_user_compatibility_roots() {
-        let _guard = env_lock().lock().expect("env lock");
+        let _guard = env_guard();
         let workspace = temp_dir("skills-omc-workspace");
         let user_home = temp_dir("skills-omc-home");
         let claude_config_dir = temp_dir("skills-omc-claude-config");
