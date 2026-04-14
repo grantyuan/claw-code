@@ -198,7 +198,7 @@ fn estimate_image_tokens(url: &str) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use api::types::{InputContentBlock, InputMessage};
+    use api::{InputContentBlock, InputMessage};
 
     #[test]
     fn test_simple_task_detection() {
@@ -215,6 +215,12 @@ mod tests {
             tools: None,
             tool_choice: None,
             stream: false,
+            temperature: None,
+            top_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            stop: None,
+            reasoning_effort: None,
         };
 
         let threshold = ComplexityThreshold::default();
@@ -234,7 +240,7 @@ mod tests {
                 }],
             }],
             system: Some("You are an expert programmer".to_string()),
-            tools: Some(vec![api::types::ToolDefinition {
+            tools: Some(vec![api::ToolDefinition {
                 name: "search".to_string(),
                 description: Some("Search the web".to_string()),
                 input_schema: serde_json::json!({
@@ -244,8 +250,14 @@ mod tests {
                     }
                 }),
             }]),
-            tool_choice: Some(api::types::ToolChoice::Auto),
+            tool_choice: Some(api::ToolChoice::Auto),
             stream: false,
+            temperature: None,
+            top_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            stop: None,
+            reasoning_effort: None,
         };
 
         let threshold = ComplexityThreshold::default();

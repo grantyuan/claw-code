@@ -363,7 +363,7 @@ fn uuid_simple() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use api::types::InputContentBlock;
+    use api::InputContentBlock;
 
     #[test]
     fn test_ollama_message_from_text_input() {
