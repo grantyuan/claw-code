@@ -114,6 +114,14 @@ class ApiService {
   async deployRemote(host: string, port: number, username: string, authMethod: string): Promise<any> {
     return this.post('/api/deploy', { host, port, username, authMethod });
   }
+
+  async exportConversation(conversationId: string, format: 'json' | 'markdown'): Promise<string> {
+    return this.get(`/api/history/export/${conversationId}?format=${format}`);
+  }
+
+  async batchHistoryOperations(action: 'delete' | 'archive', ids: string[]): Promise<number> {
+    return this.post('/api/history/batch', { action, ids });
+  }
 }
 
 export const apiService = new ApiService();
