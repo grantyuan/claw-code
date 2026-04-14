@@ -178,6 +178,7 @@ pub enum CommandType {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ProcessedInput {
     pub original: String,
     pub command_type: CommandType,

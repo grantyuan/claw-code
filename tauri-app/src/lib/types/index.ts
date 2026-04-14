@@ -1,10 +1,43 @@
 export { AgentStatus, AgentRole } from './agent';
-export type { AgentInfo, AgentMetrics, AgentConfig, AgentStatusUpdate } from './agent';
+export type { AgentInfo, AgentMetrics, AgentStatusUpdate } from './agent';
 
 export { TaskStatus, TaskPriority } from './task';
 export type { TaskInfo, TaskResult, TaskArtifact, TaskMetrics, TaskUpdate, TaskRequest } from './task';
 
-export type { Config, AIModelConfig, AgentConfigs, RAGConfig, KnowledgeRepository, VectorDbConfig, MCPConfig, MCPServer, ToolConfig, MemoryConfig, MemoryStore, RemoteConfig, RemoteComputer, DeploymentConfig, P2PConfig, UIConfig, PanelLayout, NotificationConfig, ProjectConfig } from './config';
+export type {
+  GlobalConfig,
+  AIModelGlobalConfig,
+  ProviderConfig,
+  ModelConfig,
+  ModelCapabilities,
+  ModelSettings,
+  TieredLMConfig,
+  AgentConfigs,
+  RAGConfig,
+  KnowledgeRepository,
+  VectorDbConfig,
+  MCPConfig,
+  MCPServer,
+  ToolConfig,
+  MemoryConfig,
+  MemoryStore,
+  RemoteConfig,
+  RemoteComputer,
+  DeploymentConfig,
+  P2PConfig,
+  UIConfig,
+  PanelLayout,
+  NotificationConfig,
+  ProjectConfig,
+  ProjectOverrides,
+  ProjectSettings,
+  ProjectRules,
+  AdditionalRule,
+  ExclusionSettings,
+  EffectiveConfig,
+  MergedConfig,
+  ConfigBackup
+} from './config';
 
 export { ConnectionStatus } from './connection';
 export type { ConnectionInfo, WebSocketMessage, ConnectionHealth } from './connection';

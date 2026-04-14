@@ -1,7 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-
-use tokio::sync::{mpsc, RwLock};
+use std::time::Instant;
 
 use crate::ollama_client::OllamaClientInterface;
 
@@ -91,6 +89,7 @@ impl DualModelResponse {
     }
 }
 
+#[allow(dead_code)]
 pub struct DualModelProcessor {
     config: DualModelConfig,
     local_client: Arc<dyn OllamaClientInterface>,
@@ -309,6 +308,7 @@ pub struct QualityEvaluation {
     pub accuracy_issues: Vec<String>,
 }
 
+#[allow(dead_code)]
 pub struct QualityReviewer {
     cloud_client: Arc<dyn OllamaClientInterface>,
     scoring_model: ScorerType,
@@ -347,7 +347,7 @@ impl QualityReviewer {
     async fn cloud_review(
         &self,
         local_response: &str,
-        original_request: &str,
+        _original_request: &str,
     ) -> QualityReviewResult {
         let score = self.calculate_base_score(local_response);
         let suggestions = self.generate_suggestions(local_response, score);

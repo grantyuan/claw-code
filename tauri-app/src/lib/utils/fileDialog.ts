@@ -10,12 +10,14 @@ export async function browseFolder(currentPath?: string): Promise<string | null>
       multiple: false,
       defaultPath: currentPath || undefined,
     });
-    // open() returns string | string[] | null
-    if (typeof selected === 'string') return selected;
-    if (Array.isArray(selected) && selected.length > 0) return selected[0];
-    return null;
+    if (selected === null) {
+      return null;
+    }
+    if (Array.isArray(selected)) {
+      return selected.length > 0 ? selected[0] : null;
+    }
+    return selected;
   } catch {
-    // Tauri runtime not available (browser / E2E test environment)
     return null;
   }
 }

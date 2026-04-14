@@ -50,7 +50,9 @@ impl AppState {
             }
             Err(e) => {
                 tracing::error!("Failed to initialize ClawRuntime: {}", e);
-                tracing::error!("Set ANTHROPIC_API_KEY or other provider credentials to enable runtime");
+                tracing::error!(
+                    "Set ANTHROPIC_API_KEY or other provider credentials to enable runtime"
+                );
                 None
             }
         };

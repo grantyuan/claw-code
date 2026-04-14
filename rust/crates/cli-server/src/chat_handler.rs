@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::AppState;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ChatRequest {
     pub content: String,
     #[serde(default)]
@@ -22,6 +23,7 @@ pub struct ChatRequest {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct Attachment {
     pub id: String,
     #[serde(rename = "type")]
@@ -33,6 +35,7 @@ pub struct Attachment {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 pub struct ChatResponse {
     pub id: String,
     pub role: String,

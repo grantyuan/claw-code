@@ -179,6 +179,7 @@ impl PredictiveCache {
     }
 }
 
+#[allow(dead_code)]
 pub struct PredictiveModelSelector {
     config: PredictiveConfig,
     historical_data: Arc<RwLock<Vec<HistoricalSample>>>,
@@ -401,6 +402,7 @@ pub struct BatchOptimizer {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct PendingRequest {
     content: String,
     urgency: u8,

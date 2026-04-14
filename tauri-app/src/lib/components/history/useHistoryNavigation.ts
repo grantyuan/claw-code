@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'svelte';
+import { get } from 'svelte/store';
 
 export function useHistoryNavigation<T>(
   items: T[],
@@ -7,26 +7,23 @@ export function useHistoryNavigation<T>(
     onOpen?: (item: T, index: number) => void;
   } = {}
 ) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  let selectedIndex = $state(0);
 
-  useEffect(() => {
-    if (selectedIndex >= items.length && items.length > 0) {
-      setSelectedIndex(items.length - 1);
-    }
-  }, [items.length, selectedIndex]);
+  function handleKeydown(e: KeyboardEvent) {
+    const len = items.length;
+    if (len === 0) return;
 
-  const handleKeydown = useCallback((e: KeyboardEvent) => {
     switch (e.key) {
       case 'ArrowUp':
         e.preventDefault();
-        setSelectedIndex(prev => Math.max(0, prev - 1));
+        selectedIndex = Math.max(0, selectedIndex - 1);
         if (items[selectedIndex - 1]) {
           options.onSelect?.(items[selectedIndex - 1], selectedIndex - 1);
         }
         break;
       case 'ArrowDown':
         e.preventDefault();
-        setSelectedIndex(prev => Math.min(items.length - 1, prev + 1));
+        selectedIndex = Math.min(len - 1, selectedIndex + 1);
         if (items[selectedIndex + 1]) {
           options.onSelect?.(items[selectedIndex + 1], selectedIndex + 1);
         }
@@ -39,19 +36,19 @@ export function useHistoryNavigation<T>(
         break;
       case 'Escape':
         e.preventDefault();
-        setSelectedIndex(0);
+        selectedIndex = 0;
         break;
     }
-  }, [items, selectedIndex, options]);
+  }
 
-  const selectIndex = useCallback((index: number) => {
+  function selectIndex(index: number) {
     if (index >= 0 && index < items.length) {
-      setSelectedIndex(index);
+      selectedIndex = index;
     }
-  }, [items.length]);
+  }
 
   return {
-    selectedIndex,
+    get selectedIndex() { return selectedIndex; },
     handleKeydown,
     selectIndex,
   };

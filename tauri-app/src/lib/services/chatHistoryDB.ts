@@ -1,50 +1,45 @@
-import { openDB, type IDBPDatabase } from 'idb';
 import type { ConversationRecord, MessageRecord, ProjectRecord, HistorySettings } from '$types/chatHistory';
 
 const DB_NAME = 'ChatHistoryDB';
 const DB_VERSION = 1;
 
-interface ChatHistoryDBSchema {
-  conversations: {
-    key: string;
-    value: ConversationRecord;
-    indexes: { 'by-project': string; 'by-updated': number };
-  };
-  messages: {
-    key: string;
-    value: MessageRecord;
-    indexes: { 'by-conversation': string; 'by-timestamp': number };
-  };
-  projects: {
-    key: string;
-    value: ProjectRecord;
-    indexes: { 'by-path': string };
-  };
-  settings: {
-    key: string;
-    value: HistorySettings;
-  };
-}
-
 export class ChatHistoryDB {
-  private db: IDBPDatabase<ChatHistoryDBSchema> | null = null;
+  private db: IDBDatabase | null = null;
 
   async init(): Promise<void> {
-    this.db = await openDB<ChatHistoryDBSchema>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        const convoStore = db.createObjectStore('conversations', { keyPath: 'id' });
-        convoStore.createIndex('by-project', 'projectId');
-        convoStore.createIndex('by-updated', 'updatedAt');
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-        const msgStore = db.createObjectStore('messages', { keyPath: 'id' });
-        msgStore.createIndex('by-conversation', 'conversationId');
-        msgStore.createIndex('by-timestamp', 'timestamp');
+      request.onerror = () => reject(request.error);
 
-        const projStore = db.createObjectStore('projects', { keyPath: 'id' });
-        projStore.createIndex('by-path', 'path');
+      request.onsuccess = () => {
+        this.db = request.result;
+        resolve();
+      };
 
-        db.createObjectStore('settings', { keyPath: 'id' });
-      },
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+
+        if (!db.objectStoreNames.contains('conversations')) {
+          const convoStore = db.createObjectStore('conversations', { keyPath: 'id' });
+          convoStore.createIndex('by-project', 'projectId');
+          convoStore.createIndex('by-updated', 'updatedAt');
+        }
+
+        if (!db.objectStoreNames.contains('messages')) {
+          const msgStore = db.createObjectStore('messages', { keyPath: 'id' });
+          msgStore.createIndex('by-conversation', 'conversationId');
+          msgStore.createIndex('by-timestamp', 'timestamp');
+        }
+
+        if (!db.objectStoreNames.contains('projects')) {
+          db.createObjectStore('projects', { keyPath: 'id' });
+        }
+
+        if (!db.objectStoreNames.contains('settings')) {
+          db.createObjectStore('settings', { keyPath: 'id' });
+        }
+      };
     });
   }
 
@@ -69,18 +64,37 @@ export class ChatHistoryDB {
       isArchived: false,
     };
 
-    await this.db.put('conversations', conversation);
-    return id;
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction('conversations', 'readwrite');
+      const store = tx.objectStore('conversations');
+      const request = store.put(conversation);
+      request.onsuccess = () => resolve(id);
+      request.onerror = () => reject(request.error);
+    });
   }
 
   async getConversation(id: string): Promise<ConversationRecord | undefined> {
     if (!this.db) throw new Error('DB not initialized');
-    return this.db.get('conversations', id);
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction('conversations', 'readonly');
+      const store = tx.objectStore('conversations');
+      const request = store.get(id);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
   }
 
   async getAllConversations(): Promise<ConversationRecord[]> {
     if (!this.db) throw new Error('DB not initialized');
-    return this.db.getAll('conversations');
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction('conversations', 'readonly');
+      const store = tx.objectStore('conversations');
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
   }
 
   async addMessage(conversationId: string, message: Omit<MessageRecord, 'id'>): Promise<string> {
@@ -89,46 +103,92 @@ export class ChatHistoryDB {
     const id = crypto.randomUUID();
     const fullMessage: MessageRecord = { ...message, id };
 
-    await this.db.put('messages', fullMessage);
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(['messages', 'conversations'], 'readwrite');
+      const msgStore = tx.objectStore('messages');
+      const convoStore = tx.objectStore('conversations');
 
-    const conversation = await this.db.get('conversations', conversationId);
-    if (conversation) {
-      conversation.messageCount++;
-      conversation.updatedAt = Date.now();
-      await this.db.put('conversations', conversation);
-    }
+      msgStore.put(fullMessage);
 
-    return id;
+      const convoRequest = convoStore.get(conversationId);
+      convoRequest.onsuccess = () => {
+        const conversation = convoRequest.result;
+        if (conversation) {
+          conversation.messageCount++;
+          conversation.updatedAt = Date.now();
+          convoStore.put(conversation);
+        }
+      };
+
+      tx.oncomplete = () => resolve(id);
+      tx.onerror = () => reject(tx.error);
+    });
   }
 
   async getMessage(id: string): Promise<MessageRecord | undefined> {
     if (!this.db) throw new Error('DB not initialized');
-    return this.db.get('messages', id);
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction('messages', 'readonly');
+      const store = tx.objectStore('messages');
+      const request = store.get(id);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
   }
 
   async getMessages(conversationId: string): Promise<MessageRecord[]> {
     if (!this.db) throw new Error('DB not initialized');
-    const index = this.db.transaction('messages').store.index('by-conversation');
-    const messages = await index.getAll(conversationId);
-    return messages.sort((a, b) => a.timestamp - b.timestamp);
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction('messages', 'readonly');
+      const store = tx.objectStore('messages');
+      const index = store.index('by-conversation');
+      const request = index.getAll(conversationId);
+      request.onsuccess = () => {
+        const messages = request.result || [];
+        resolve(messages.sort((a: MessageRecord, b: MessageRecord) => a.timestamp - b.timestamp));
+      };
+      request.onerror = () => reject(request.error);
+    });
   }
 
   async deleteConversation(id: string): Promise<void> {
     if (!this.db) throw new Error('DB not initialized');
-    await this.db.delete('conversations', id);
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction('conversations', 'readwrite');
+      const store = tx.objectStore('conversations');
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
   }
 
   async updateConversation(id: string, updates: Partial<ConversationRecord>): Promise<void> {
     if (!this.db) throw new Error('DB not initialized');
-    const conversation = await this.db.get('conversations', id);
-    if (conversation) {
-      const updated = { ...conversation, ...updates };
-      await this.db.put('conversations', updated);
-    }
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction('conversations', 'readwrite');
+      const store = tx.objectStore('conversations');
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const conversation = getRequest.result;
+        if (conversation) {
+          const updated = { ...conversation, ...updates };
+          const putRequest = store.put(updated);
+          putRequest.onsuccess = () => resolve();
+          putRequest.onerror = () => reject(putRequest.error);
+        } else {
+          resolve();
+        }
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+    });
   }
 
   async searchConversations(query: string): Promise<ConversationRecord[]> {
-    if (!this.db) throw new Error('DB not initialized');
     const all = await this.getAllConversations();
     const lowerQuery = query.toLowerCase();
     return all.filter(c =>
@@ -139,8 +199,17 @@ export class ChatHistoryDB {
 
   async searchMessages(query: string): Promise<MessageRecord[]> {
     if (!this.db) throw new Error('DB not initialized');
-    const all = await this.db.getAll('messages');
-    const lowerQuery = query.toLowerCase();
-    return all.filter(m => m.content.toLowerCase().includes(lowerQuery));
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction('messages', 'readonly');
+      const store = tx.objectStore('messages');
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const all = request.result || [];
+        const lowerQuery = query.toLowerCase();
+        resolve(all.filter((m: MessageRecord) => m.content.toLowerCase().includes(lowerQuery)));
+      };
+      request.onerror = () => reject(request.error);
+    });
   }
 }

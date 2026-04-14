@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use tokio::sync::RwLock;
 
@@ -62,6 +62,7 @@ pub trait QualityScorer: Send + Sync {
     fn score(&self, local_response: &str, original_request: &str) -> QualityScore;
 }
 
+#[allow(dead_code)]
 pub struct CloudModelScorer {
     cloud_client: Arc<dyn crate::ollama_client::OllamaClientInterface>,
 }
@@ -104,6 +105,7 @@ impl QualityScorer for CloudModelScorer {
     }
 }
 
+#[allow(dead_code)]
 pub struct DualModelProcessor {
     config: PerformanceModeConfig,
     local_client: Arc<dyn crate::ollama_client::OllamaClientInterface>,

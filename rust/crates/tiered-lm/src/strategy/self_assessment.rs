@@ -45,6 +45,7 @@ pub struct SelfAssessmentResult {
     pub processing_time_ms: u64,
 }
 
+#[allow(dead_code)]
 pub struct LocalSelfAssessment {
     config: StrategyConfig,
     local_client: Arc<dyn OllamaClientInterface>,

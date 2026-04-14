@@ -884,8 +884,7 @@ fn translate_message(message: &InputMessage) -> Vec<Value> {
                             "arguments": input.to_string(),
                         }
                     })),
-                    InputContentBlock::ToolResult { .. } => {}
-                    InputContentBlock::ImageUrl { .. } => {}
+                    InputContentBlock::ToolResult { .. } | InputContentBlock::ImageUrl { .. } => {}
                 }
             }
             if text.is_empty() && tool_calls.is_empty() {

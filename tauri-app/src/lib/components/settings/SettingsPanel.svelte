@@ -3,6 +3,11 @@
   import { configStore } from '$stores/configStore';
   import AIModelSettings from './AIModelSettings.svelte';
   import TieredLMSettings from './TieredLMSettings.svelte';
+  import AgentsSettings from './AgentsSettings.svelte';
+  import RAGSettings from './RAGSettings.svelte';
+  import MCPSettings from './MCPSettings.svelte';
+  import MemorySettings from './MemorySettings.svelte';
+  import P2PSettings from './P2PSettings.svelte';
   import Button from '$components/common/Button.svelte';
 
   let activeTab = $state('ai-model');
@@ -83,6 +88,16 @@
           <AIModelSettings />
         {:else if activeTab === 'tiered-lm'}
           <TieredLMSettings />
+        {:else if activeTab === 'agents'}
+          <AgentsSettings />
+        {:else if activeTab === 'rag'}
+          <RAGSettings />
+        {:else if activeTab === 'mcp'}
+          <MCPSettings />
+        {:else if activeTab === 'memory'}
+          <MemorySettings />
+        {:else if activeTab === 'p2p'}
+          <P2PSettings />
         {:else if activeTab === 'remote'}
           <div class="space-y-6">
             <div>

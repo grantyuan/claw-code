@@ -1,5 +1,5 @@
 import { writable, derived } from 'svelte/store';
-import type { Config, ModelProfile } from '$types/config';
+import type { AIModelGlobalConfig, ModelConfig } from '$types/config';
 
 interface ModelManagerState {
   activeModelId: string;
@@ -19,9 +19,10 @@ function createModelManagerStore() {
   return {
     subscribe,
 
-    initialize: (config: Config) => {
+    initialize: (config: AIModelGlobalConfig) => {
+      const defaultModel = config.models.find(m => m.isDefault);
       set({
-        activeModelId: config.defaultModelId || '',
+        activeModelId: defaultModel?.id || config.models[0]?.id || '',
         isFallbackMode: false,
         failureCounts: {},
       });
@@ -31,11 +32,11 @@ function createModelManagerStore() {
       update(state => ({ ...state, activeModelId: modelId }));
     },
 
-    getActiveProfile: (config: Config): ModelProfile | null => {
+    getActiveProfile: (config: AIModelGlobalConfig): ModelConfig | null => {
       let activeId = '';
       const unsub = subscribe(s => { activeId = s.activeModelId; });
       unsub();
-      return config.modelProfiles?.find(p => p.id === activeId && p.enabled) || null;
+      return config.models.find(m => m.id === activeId) || null;
     },
 
     getActiveModelId: (): string => {
@@ -59,17 +60,17 @@ function createModelManagerStore() {
       }));
     },
 
-    reportFailure: (modelId: string, _error: string, config: Config): ModelProfile | null => {
-      let fallback: ModelProfile | null = null;
+    reportFailure: (modelId: string, _error: string, config: AIModelGlobalConfig): ModelConfig | null => {
+      let fallback: ModelConfig | null = null;
       update(state => {
         const counts = { ...state.failureCounts };
         counts[modelId] = (counts[modelId] || 0) + 1;
 
-        if (!config.fallbackConfig?.enabled) {
+        if (!config.tieredLM.enabled) {
           return { ...state, failureCounts: counts };
         }
 
-        const threshold = config.fallbackConfig.maxConsecutiveFailures || 3;
+        const threshold = 3;
         if (counts[modelId] >= threshold) {
           const next = getNextBestModel(modelId, config);
           if (next) {
@@ -87,23 +88,26 @@ function createModelManagerStore() {
       return fallback;
     },
 
-    onNewConversation: (config: Config) => {
+    onNewConversation: (config: AIModelGlobalConfig) => {
       update(state => {
-        if (config.fallbackConfig?.retryDefaultOnNewConversation && state.isFallbackMode) {
-          return {
-            ...state,
-            activeModelId: config.defaultModelId,
-            isFallbackMode: false,
-          };
+        if (state.isFallbackMode) {
+          const defaultModel = config.models.find(m => m.isDefault);
+          if (defaultModel) {
+            return {
+              ...state,
+              activeModelId: defaultModel.id,
+              isFallbackMode: false,
+            };
+          }
         }
         return state;
       });
     },
 
-    getSortedEnabledProfiles: (config: Config): ModelProfile[] => {
-      return [...(config.modelProfiles || [])]
-        .filter(p => p.enabled)
-        .sort((a, b) => a.capabilityRank - b.capabilityRank);
+    getSortedEnabledModels: (config: AIModelGlobalConfig): ModelConfig[] => {
+      return [...(config.models || [])]
+        .filter(m => m.isDefault || config.defaultProviderId)
+        .sort((a, b) => a.rank - b.rank);
     },
 
     resetAllFailures: () => {
@@ -112,20 +116,18 @@ function createModelManagerStore() {
   };
 }
 
-function getNextBestModel(currentModelId: string, config: Config): ModelProfile | null {
-  const profiles = (config.modelProfiles || [])
-    .filter(p => p.enabled && p.id !== currentModelId)
-    .sort((a, b) => a.capabilityRank - b.capabilityRank);
+function getNextBestModel(currentModelId: string, config: AIModelGlobalConfig): ModelConfig | null {
+  const models = (config.models || [])
+    .filter(m => m.id !== currentModelId)
+    .sort((a, b) => a.rank - b.rank);
 
-  const current = config.modelProfiles?.find(p => p.id === currentModelId);
-  if (!current) return profiles[0] || null;
+  const current = config.models.find(m => m.id === currentModelId);
+  if (!current) return models[0] || null;
 
-  // 优先选 rank 更高的（数字更大 = 能力更弱但可用）
-  const higher = profiles.find(p => p.capabilityRank > current.capabilityRank);
-  if (higher) return higher;
+  const lower = models.find(m => m.rank > current.rank);
+  if (lower) return lower;
 
-  // 没有更高 rank 的，选第一个可用的
-  return profiles[0] || null;
+  return models[0] || null;
 }
 
 export const modelManagerStore = createModelManagerStore();

@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::{mpsc, RwLock};
-use tokio::time::interval;
 
 #[derive(Debug, Clone)]
 pub struct ContextManagerConfig {
@@ -35,6 +34,7 @@ pub struct ContextSnapshot {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct TokenMonitor {
     config: ContextManagerConfig,
     current_tokens: Arc<RwLock<u32>>,
@@ -316,7 +316,7 @@ impl ContextManager {
         Arc::clone(&self.token_monitor)
     }
 
-    pub async fn update_context(&self, context: &str, token_count: u32) {
+    pub async fn update_context(&self, _context: &str, token_count: u32) {
         self.token_monitor.update_token_count(token_count).await;
     }
 

@@ -13,8 +13,12 @@
   let providers = $state<ProviderConfig[]>([]);
   let models = $state<ModelConfig[]>([]);
   let defaultProviderId = $state('');
-  let selectedProviderForModel = $state('');
   let hasUnsavedChanges = $derived($configStore.isDirty);
+  let sortedModels = $derived([...models].sort((a, b) => a.rank - b.rank));
+
+  function getSortedModelsForProvider(providerId: string): ModelConfig[] {
+    return models.filter(m => m.providerId === providerId).sort((a, b) => a.rank - b.rank);
+  }
 
   const PROVIDER_DEFAULTS = {
     anthropic: {
@@ -25,13 +29,13 @@
       endpoint: 'https://api.openai.com/v1',
       name: 'OpenAI'
     },
-    local: {
+    ollama: {
       endpoint: 'http://localhost:11434/v1',
-      name: 'Local (Ollama)'
+      name: 'Ollama'
     },
-    custom: {
+    other: {
       endpoint: '',
-      name: 'Custom'
+      name: 'Custom Provider'
     }
   };
 
@@ -46,12 +50,12 @@
       { name: 'gpt-4-turbo', displayName: 'GPT-4 Turbo', capabilities: { vision: true, functionCalling: true, streaming: true, maxTokens: 4096, contextWindow: 128000 } },
       { name: 'gpt-3.5-turbo', displayName: 'GPT-3.5 Turbo', capabilities: { vision: false, functionCalling: true, streaming: true, maxTokens: 4096, contextWindow: 16385 } },
     ],
-    local: [
+    ollama: [
       { name: 'llama3', displayName: 'Llama 3', capabilities: { vision: false, functionCalling: false, streaming: true, maxTokens: 4096, contextWindow: 8192 } },
       { name: 'mistral', displayName: 'Mistral', capabilities: { vision: false, functionCalling: false, streaming: true, maxTokens: 4096, contextWindow: 8192 } },
       { name: 'codellama', displayName: 'Code Llama', capabilities: { vision: false, functionCalling: false, streaming: true, maxTokens: 4096, contextWindow: 16384 } },
     ],
-    custom: []
+    other: []
   };
 
   $effect(() => {
@@ -63,23 +67,6 @@
     providers = config.aiModel.providers;
     models = config.aiModel.models;
     defaultProviderId = config.aiModel.defaultProviderId;
-  }
-
-  async function addProvider() {
-    const newProvider: Omit<ProviderConfig, 'id'> = {
-      name: PROVIDER_DEFAULTS['anthropic'].name,
-      type: 'anthropic',
-      endpoint: PROVIDER_DEFAULTS['anthropic'].endpoint,
-      isDefault: providers.length === 0,
-    };
-
-    const id = await configService.addProvider(newProvider);
-    providers = [...providers, { ...newProvider, id }];
-    configStore.setDirty(true);
-
-    if (providers.length === 1) {
-      defaultProviderId = id;
-    }
   }
 
   async function deleteProvider(id: string) {
@@ -148,19 +135,6 @@
     configStore.setDirty(true);
   }
 
-  async function toggleModelForProvider(modelId: string, providerId: string) {
-    const model = models.find(m => m.id === modelId);
-    if (!model) return;
-
-    if (model.providerId === providerId) {
-      await deleteModel(modelId);
-    } else {
-      await configService.updateModel(modelId, { providerId });
-      models = models.map(m => m.id === modelId ? { ...m, providerId } : m);
-      configStore.setDirty(true);
-    }
-  }
-
   async function deleteModel(id: string) {
     await configService.deleteModel(id);
     models = models.filter(m => m.id !== id);
@@ -207,18 +181,19 @@
     return models.filter(m => m.providerId === providerId);
   }
 
-  function isModelSelectedForProvider(modelId: string, providerId: string): boolean {
-    const model = models.find(m => m.id === modelId);
-    return model?.providerId === providerId;
+  function getProviderTypeLabel(type: ProviderConfig['type']): string {
+    switch (type) {
+      case 'anthropic': return 'Anthropic';
+      case 'openai': return 'OpenAI';
+      case 'ollama': return 'Ollama';
+      case 'other': return 'Other Protocol';
+    }
   }
 </script>
 
 <div class="space-y-6">
   <div class="flex items-center justify-between">
     <h3 class="text-lg font-medium" style="color: var(--color-text);">AI Model Configuration</h3>
-    <Button variant="primary" size="sm" onclick={addProvider}>
-      Add Provider
-    </Button>
   </div>
 
   <div class="space-y-4">
@@ -230,7 +205,7 @@
         onchange={() => configStore.setDirty(true)}
       >
         {#each providers as provider (provider.id)}
-          <option value={provider.id}>{provider.name} ({provider.type})</option>
+          <option value={provider.id}>{provider.name} ({getProviderTypeLabel(provider.type)})</option>
         {/each}
       </select>
     </div>
@@ -255,8 +230,8 @@
                 >
                   <option value="anthropic">Anthropic</option>
                   <option value="openai">OpenAI</option>
-                  <option value="local">Local (Ollama)</option>
-                  <option value="custom">Custom</option>
+                  <option value="ollama">Ollama</option>
+                  <option value="other">Other Protocol</option>
                 </select>
               </div>
               <Button variant="secondary" size="sm" onclick={() => deleteProvider(provider.id)}>
@@ -265,15 +240,16 @@
             </div>
 
             <div class="mb-3">
-              <label class="block text-xs font-medium mb-1" style="color: var(--color-text);">API Endpoint</label>
+              <label class="block text-xs font-medium mb-1" for="endpoint-{provider.id}" style="color: var(--color-text);">API Endpoint</label>
               <input
+                id="endpoint-{provider.id}"
                 type="url"
                 class="input w-full"
                 placeholder="https://api.example.com"
                 value={provider.endpoint || ''}
                 onchange={(e) => updateProvider(provider.id, { endpoint: (e.target as HTMLInputElement).value })}
               />
-              {#if provider.type !== 'custom'}
+              {#if provider.type !== 'other'}
                 <p class="text-xs mt-1" style="color: var(--color-text-secondary);">
                   Default: {PROVIDER_DEFAULTS[provider.type].endpoint}
                 </p>
@@ -281,8 +257,9 @@
             </div>
 
             <div>
-              <label class="block text-xs font-medium mb-1" style="color: var(--color-text);">API Key</label>
+              <label class="block text-xs font-medium mb-1" for="apikey-{provider.id}" style="color: var(--color-text);">API Key</label>
               <input
+                id="apikey-{provider.id}"
                 type="password"
                 class="input w-full"
                 placeholder="sk-..."
@@ -310,7 +287,7 @@
                 </p>
               {:else}
                 <div class="space-y-1">
-                  {#each getModelsForProvider(provider.id).sort((a, b) => a.rank - b.rank) as model, index (model.id)}
+                  {#each getSortedModelsForProvider(provider.id) as model, index (model.id)}
                     <div class="flex items-center justify-between p-2 rounded" style="background: var(--color-surface);">
                       <div class="flex items-center gap-2">
                         <span class="px-2 py-0.5 rounded text-xs font-medium" style="background: var(--color-primary-100, #dbeafe); color: var(--color-primary-700, #1d4ed8);">
@@ -360,7 +337,7 @@
 
         {#if providers.length === 0}
           <p class="text-sm text-center py-4" style="color: var(--color-text-secondary);">
-            No providers configured. Click "Add Provider" to get started.
+            No providers configured. Please add a provider.
           </p>
         {/if}
       </div>
@@ -376,7 +353,7 @@
     </p>
 
     <div class="space-y-2">
-      {#each models.sort((a, b) => a.rank - b.rank) as model, index (model.id)}
+      {#each sortedModels as model, index (model.id)}
         <div class="p-3 rounded-lg border flex items-center justify-between" style="border-color: var(--color-border); background: var(--color-bg);">
           <div class="flex items-center gap-3">
             <span class="px-2 py-1 rounded text-sm font-bold" style="background: var(--color-primary-500); color: white;">

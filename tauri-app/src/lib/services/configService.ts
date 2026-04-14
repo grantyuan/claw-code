@@ -12,13 +12,73 @@ const GLOBAL_CONFIG_PATH = '~/.config/clawcode/config.json';
 const BACKUP_DIR = '~/.config/clawcode/backups';
 
 function getDefaultGlobalConfig(): GlobalConfig {
+  const defaultProviders: ProviderConfig[] = [
+    {
+      id: 'anthropic-default',
+      name: 'Anthropic',
+      type: 'anthropic',
+      endpoint: 'https://api.anthropic.com',
+      apiKey: '',
+      isDefault: true,
+    },
+    {
+      id: 'openai-default',
+      name: 'OpenAI',
+      type: 'openai',
+      endpoint: 'https://api.openai.com/v1',
+      apiKey: '',
+      isDefault: false,
+    },
+    {
+      id: 'ollama-default',
+      name: 'Ollama',
+      type: 'ollama',
+      endpoint: 'http://localhost:11434/v1',
+      apiKey: '',
+      isDefault: false,
+    },
+  ];
+
+  const defaultModels: ModelConfig[] = [
+    {
+      id: 'claude-opus-4-5',
+      providerId: 'anthropic-default',
+      name: 'claude-opus-4-5',
+      displayName: 'Claude Opus 4',
+      rank: 1,
+      capabilities: { vision: true, functionCalling: true, streaming: true, maxTokens: 4096, contextWindow: 200000 },
+      isDefault: true,
+      settings: { temperature: 0.7, maxTokens: 4096, timeout: 120 },
+    },
+    {
+      id: 'claude-sonnet-4-5',
+      providerId: 'anthropic-default',
+      name: 'claude-sonnet-4-5',
+      displayName: 'Claude Sonnet 4',
+      rank: 2,
+      capabilities: { vision: true, functionCalling: true, streaming: true, maxTokens: 4096, contextWindow: 200000 },
+      isDefault: false,
+      settings: { temperature: 0.7, maxTokens: 4096, timeout: 120 },
+    },
+    {
+      id: 'gpt-4o',
+      providerId: 'openai-default',
+      name: 'gpt-4o',
+      displayName: 'GPT-4o',
+      rank: 3,
+      capabilities: { vision: true, functionCalling: true, streaming: true, maxTokens: 4096, contextWindow: 128000 },
+      isDefault: false,
+      settings: { temperature: 0.7, maxTokens: 4096, timeout: 120 },
+    },
+  ];
+
   return {
     version: CONFIG_VERSION,
     lastModified: new Date().toISOString(),
     aiModel: {
-      providers: [],
-      defaultProviderId: '',
-      models: [],
+      providers: defaultProviders,
+      defaultProviderId: 'anthropic-default',
+      models: defaultModels,
       tieredLM: {
         enabled: false,
         auxiliaryModelId: null,
@@ -112,7 +172,7 @@ class ConfigService {
       this.globalConfig = getDefaultGlobalConfig();
     }
 
-    return this.globalConfig;
+    return this.globalConfig!;
   }
 
   async saveGlobalConfig(config: GlobalConfig): Promise<void> {
@@ -323,19 +383,19 @@ class ConfigService {
       };
     }
 
-    const overrides = project.overrides || {};
+    const overrides = project.overrides;
 
     return {
-      providers: overrides.aiModel?.providers || global.aiModel.providers,
-      models: overrides.aiModel?.models || global.aiModel.models,
-      tieredLM: overrides.aiModel?.tieredLM || global.aiModel.tieredLM,
-      agents: overrides.agents || global.agents,
-      rag: overrides.rag || global.rag,
-      mcp: overrides.mcp || global.mcp,
-      memory: overrides.memory || global.memory,
-      remote: overrides.remote || global.remote,
-      p2p: overrides.p2p || global.p2p,
-      ui: overrides.ui || global.ui,
+      providers: overrides?.aiModel?.providers || global.aiModel.providers,
+      models: overrides?.aiModel?.models || global.aiModel.models,
+      tieredLM: overrides?.aiModel?.tieredLM || global.aiModel.tieredLM,
+      agents: { ...global.agents, ...overrides?.agents },
+      rag: { ...global.rag, ...overrides?.rag },
+      mcp: { ...global.mcp, ...overrides?.mcp },
+      memory: { ...global.memory, ...overrides?.memory },
+      remote: { ...global.remote, ...overrides?.remote },
+      p2p: { ...global.p2p, ...overrides?.p2p },
+      ui: { ...global.ui, ...overrides?.ui },
       rules: project.project.rules,
       exclusions: project.project.exclusions,
     };

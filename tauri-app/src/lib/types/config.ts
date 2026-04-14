@@ -21,7 +21,7 @@ export interface AIModelGlobalConfig {
 export interface ProviderConfig {
   id: string;
   name: string;
-  type: 'anthropic' | 'openai' | 'local' | 'custom';
+  type: 'anthropic' | 'openai' | 'ollama' | 'other';
   endpoint?: string;
   apiKey?: string;
   isDefault: boolean;

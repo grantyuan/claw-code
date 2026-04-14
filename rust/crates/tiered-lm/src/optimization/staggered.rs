@@ -1,7 +1,7 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WorkflowStage {
@@ -148,6 +148,7 @@ pub struct StageTransitionResult {
     pub successful: bool,
 }
 
+#[allow(dead_code)]
 pub struct ParallelPipeline {
     workflow: StaggeredWorkflow,
     local_task_handle: Arc<RwLock<Option<TaskHandle>>>,
@@ -155,6 +156,7 @@ pub struct ParallelPipeline {
     max_parallel_stages: usize,
 }
 
+#[allow(dead_code)]
 struct TaskHandle {
     started_at: Instant,
     completed: bool,

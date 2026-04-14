@@ -1,9 +1,7 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use tokio::sync::{mpsc, RwLock};
-
-use crate::performance::PerformanceModeConfig;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RoutingDecision {
@@ -287,6 +285,7 @@ impl AdaptiveRouter {
     }
 }
 
+#[allow(dead_code)]
 pub struct DynamicThrottler {
     requests_per_second: Arc<RwLock<f32>>,
     burst_size: Arc<RwLock<u32>>,
@@ -306,7 +305,7 @@ impl DynamicThrottler {
 
     pub async fn should_allow(&self) -> bool {
         let rate = *self.requests_per_second.read().await;
-        let current = *self.current_rate.read().await;
+        let _current = *self.current_rate.read().await;
 
         let now = Instant::now();
         let elapsed = now

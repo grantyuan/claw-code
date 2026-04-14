@@ -1,8 +1,8 @@
 import { writable, derived } from 'svelte/store';
-import type { Config } from '$types/config';
+import type { GlobalConfig } from '$types/config';
 
 interface ConfigState {
-  config: Config | null;
+  config: GlobalConfig | null;
   isDirty: boolean;
   isValid: boolean;
   errors: Map<string, string>;
@@ -23,11 +23,11 @@ function createConfigStore() {
   return {
     subscribe,
 
-    setConfig: (config: Config) => {
+    setConfig: (config: GlobalConfig) => {
       update(state => ({ ...state, config, isDirty: false }));
     },
 
-    updateConfig: <K extends keyof Config>(key: K, value: Config[K]) => {
+    updateConfig: <K extends keyof GlobalConfig>(key: K, value: GlobalConfig[K]) => {
       update(state => {
         if (!state.config) return state;
         return {
@@ -69,7 +69,7 @@ function createConfigStore() {
     },
 
     saveToStorage: () => {
-      let configToSave: Config | null = null;
+      let configToSave: GlobalConfig | null = null;
       update(state => {
         configToSave = state.config;
         if (state.config) {

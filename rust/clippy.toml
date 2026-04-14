@@ -1,0 +1,21 @@
+# Clippy configuration for the Rust workspace
+# Allowing certain pedantic lints for experimental/incomplete code
+
+msrv = "1.75"
+
+[lints]
+workspace = true
+
+[lints.tiered-lm]
+# Experimental code - allowing certain warnings
+clippy.excessive_precision = "allow"
+clippy.float_arithmetic = "allow"
+clippy.imprecise_flops = "allow"
+clippy.missing_enforced_import_renames = "allow"
+clippy.missing_errors_doc = "allow"
+clippy.missing_panics_doc = "allow"
+clippy.module_inception = "allow"
+
+[lints.cli-server]
+clippy.missing_errors_doc = "allow"
+clippy.missing_panics_doc = "allow"

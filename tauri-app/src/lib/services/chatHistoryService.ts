@@ -29,7 +29,8 @@ class ChatHistoryService {
   }
 
   async getConversation(id: string): Promise<ConversationRecord | null> {
-    return this.db.getConversation(id) || null;
+    const result = await this.db.getConversation(id);
+    return result ?? null;
   }
 
   async listConversations(options: ListOptions = {}): Promise<ConversationRecord[]> {
