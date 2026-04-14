@@ -885,6 +885,7 @@ fn translate_message(message: &InputMessage) -> Vec<Value> {
                         }
                     })),
                     InputContentBlock::ToolResult { .. } => {}
+                    InputContentBlock::ImageUrl { .. } => {}
                 }
             }
             if text.is_empty() && tool_calls.is_empty() {
@@ -921,6 +922,10 @@ fn translate_message(message: &InputMessage) -> Vec<Value> {
                     "is_error": is_error,
                 })),
                 InputContentBlock::ToolUse { .. } => None,
+                InputContentBlock::ImageUrl { url } => Some(json!({
+                    "role": "user",
+                    "content": format!("[Image: {}]", url),
+                })),
             })
             .collect(),
     }

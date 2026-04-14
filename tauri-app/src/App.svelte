@@ -96,7 +96,7 @@
   <Modal
     isOpen={showRuntimeError}
     title="Runtime Not Available"
-    onClose={() => {}}
+    onClose={() => { showRuntimeError = false; }}
     size="md"
   >
     {#snippet children()}

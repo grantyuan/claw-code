@@ -81,6 +81,9 @@ pub enum InputContentBlock {
     Text {
         text: String,
     },
+    ImageUrl {
+        url: String,
+    },
     ToolUse {
         id: String,
         name: String,

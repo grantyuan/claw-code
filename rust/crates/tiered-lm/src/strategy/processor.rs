@@ -350,6 +350,12 @@ impl StrategyProcessor {
             tools: None,
             tool_choice: None,
             stream: false,
+            temperature: None,
+            top_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            stop: None,
+            reasoning_effort: None,
         };
 
         let response = self.local_client.send_message(&request).await?;
@@ -370,6 +376,12 @@ impl StrategyProcessor {
             tools: None,
             tool_choice: None,
             stream: false,
+            temperature: None,
+            top_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            stop: None,
+            reasoning_effort: None,
         };
 
         let response = self.cloud_client.send_message(&request).await?;
