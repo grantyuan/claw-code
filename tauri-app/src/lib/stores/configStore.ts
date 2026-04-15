@@ -27,9 +27,22 @@ function createConfigStore() {
       update(state => ({ ...state, config, isDirty: false }));
     },
 
-    updateConfig: <K extends keyof GlobalConfig>(key: K, value: GlobalConfig[K]) => {
+    updateConfig: (configOrKey: GlobalConfig | keyof GlobalConfig, value?: any) => {
       update(state => {
-        if (!state.config) return state;
+        if (!state.config) {
+          if (typeof configOrKey === 'object') {
+            return { ...state, config: configOrKey as GlobalConfig, isDirty: true };
+          }
+          return state;
+        }
+        if (typeof configOrKey === 'object') {
+          return {
+            ...state,
+            config: configOrKey as GlobalConfig,
+            isDirty: true,
+          };
+        }
+        const key = configOrKey as keyof GlobalConfig;
         return {
           ...state,
           config: { ...state.config, [key]: value },
@@ -83,6 +96,15 @@ function createConfigStore() {
         return state;
       });
       return configToSave;
+    },
+
+    applyConfig: (config: GlobalConfig) => {
+      try {
+        localStorage.setItem('clawcode-config', JSON.stringify(config));
+        update(state => ({ ...state, config, isDirty: false, lastSaved: new Date() }));
+      } catch (error) {
+        console.error('Failed to apply config:', error);
+      }
     },
   };
 }

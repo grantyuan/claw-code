@@ -4,15 +4,18 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::runtime::SessionId;
+use crate::AIModelConfig;
 use crate::AppState;
 
 pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<Value> {
-    let runtime_healthy = state.runtime.is_some();
-    let session_count = if let Some(ref runtime) = state.runtime {
+    let runtime_guard = state.runtime.read().await;
+    let runtime_healthy = runtime_guard.is_some();
+    let session_count = if let Some(ref runtime) = *runtime_guard {
         runtime.list_sessions().await.len()
     } else {
         0
     };
+    drop(runtime_guard);
 
     Json(json!({
         "status": if runtime_healthy { "ok" } else { "degraded" },
@@ -79,19 +82,124 @@ pub async fn cancel_task(
     }
 }
 
-pub async fn get_config() -> Json<Value> {
+pub async fn get_config(State(state): State<Arc<AppState>>) -> Json<Value> {
+    let config = state.config.read().await;
     Json(json!({
         "config": {
             "aiModel": {
-                "provider": "anthropic",
-                "model": "claude-3-opus"
+                "provider": config.provider,
+                "endpoint": config.endpoint,
+                "model": config.model,
+                "hasApiKey": config.api_key.is_some(),
             }
         }
     }))
 }
 
-pub async fn update_config(Json(config): Json<Value>) -> Json<Value> {
+#[derive(Debug, Deserialize)]
+pub struct UpdateConfigRequest {
+    pub aiModel: Option<AIModelConfigRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AIModelConfigRequest {
+    pub provider: Option<String>,
+    pub endpoint: Option<String>,
+    pub api_key: Option<String>,
+    pub model: Option<String>,
+}
+
+pub async fn update_config(
+    State(state): State<Arc<AppState>>,
+    Json(config): Json<Value>,
+) -> Json<Value> {
+    tracing::info!("Received config update request: {:?}", config);
+
+    let ai_model = config.get("aiModel");
+    if let Some(ai_model) = ai_model {
+        let new_config = AIModelConfig {
+            provider: ai_model
+                .get("provider")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "anthropic".to_string()),
+            endpoint: ai_model
+                .get("endpoint")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "https://api.anthropic.com".to_string()),
+            api_key: ai_model.get("apiKey").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            model: ai_model
+                .get("model")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "claude-sonnet-4-6".to_string()),
+        };
+
+        match state.init_runtime(new_config.clone()).await {
+            Ok(_) => {
+                tracing::info!("Runtime initialized with new config");
+                return Json(json!({
+                    "success": true,
+                    "config": {
+                        "aiModel": {
+                            "provider": new_config.provider,
+                            "endpoint": new_config.endpoint,
+                            "model": new_config.model,
+                            "hasApiKey": new_config.api_key.is_some(),
+                        }
+                    }
+                }));
+            }
+            Err(e) => {
+                tracing::error!("Failed to initialize runtime: {}", e);
+                return Json(json!({
+                    "success": false,
+                    "error": e,
+                    "config": config
+                }));
+            }
+        }
+    }
+
     Json(json!({ "success": true, "config": config }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InitRuntimeRequest {
+    pub provider: String,
+    pub endpoint: String,
+    pub api_key: String,
+    pub model: String,
+}
+
+pub async fn init_runtime(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<InitRuntimeRequest>,
+) -> Json<Value> {
+    tracing::info!(
+        "Initializing runtime with provider: {}, model: {}",
+        request.provider,
+        request.model
+    );
+
+    let config = AIModelConfig {
+        provider: request.provider,
+        endpoint: request.endpoint,
+        api_key: Some(request.api_key),
+        model: request.model,
+    };
+
+    match state.init_runtime(config).await {
+        Ok(_) => {
+            tracing::info!("Runtime initialized successfully");
+            Json(json!({ "success": true, "message": "Runtime initialized successfully" }))
+        }
+        Err(e) => {
+            tracing::error!("Failed to initialize runtime: {}", e);
+            Json(json!({ "success": false, "error": e }))
+        }
+    }
 }
 
 pub async fn deploy_remote(Json(deploy_request): Json<Value>) -> Json<Value> {
@@ -111,8 +219,9 @@ pub struct CreateSessionRequest {
 pub async fn list_sessions(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, axum::http::StatusCode> {
-    let runtime = state.runtime.as_ref().ok_or_else(|| {
-        tracing::error!("Runtime not available");
+    let runtime_guard = state.runtime.read().await;
+    let runtime = runtime_guard.as_ref().ok_or_else(|| {
+        tracing::error!("Runtime not available - initialize with /api/runtime/init first");
         axum::http::StatusCode::SERVICE_UNAVAILABLE
     })?;
 
@@ -124,8 +233,9 @@ pub async fn create_session(
     State(state): State<Arc<AppState>>,
     Json(request): Json<CreateSessionRequest>,
 ) -> Result<Json<Value>, axum::http::StatusCode> {
-    let runtime = state.runtime.as_ref().ok_or_else(|| {
-        tracing::error!("Runtime not available");
+    let runtime_guard = state.runtime.read().await;
+    let runtime = runtime_guard.as_ref().ok_or_else(|| {
+        tracing::error!("Runtime not available - initialize with /api/runtime/init first");
         axum::http::StatusCode::SERVICE_UNAVAILABLE
     })?;
 
@@ -150,7 +260,8 @@ pub async fn get_session(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Result<Json<Value>, axum::http::StatusCode> {
-    let runtime = state.runtime.as_ref().ok_or_else(|| {
+    let runtime_guard = state.runtime.read().await;
+    let runtime = runtime_guard.as_ref().ok_or_else(|| {
         tracing::error!("Runtime not available");
         axum::http::StatusCode::SERVICE_UNAVAILABLE
     })?;
@@ -166,7 +277,8 @@ pub async fn delete_session(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Result<axum::http::StatusCode, axum::http::StatusCode> {
-    let runtime = state.runtime.as_ref().ok_or_else(|| {
+    let runtime_guard = state.runtime.read().await;
+    let runtime = runtime_guard.as_ref().ok_or_else(|| {
         tracing::error!("Runtime not available");
         axum::http::StatusCode::SERVICE_UNAVAILABLE
     })?;
@@ -182,7 +294,8 @@ pub async fn switch_session(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Result<Json<Value>, axum::http::StatusCode> {
-    let runtime = state.runtime.as_ref().ok_or_else(|| {
+    let runtime_guard = state.runtime.read().await;
+    let runtime = runtime_guard.as_ref().ok_or_else(|| {
         tracing::error!("Runtime not available");
         axum::http::StatusCode::SERVICE_UNAVAILABLE
     })?;

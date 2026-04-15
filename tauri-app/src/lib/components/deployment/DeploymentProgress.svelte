@@ -2,8 +2,12 @@
   import { onMount, onDestroy } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
 
-  export let deploymentId: string;
-  export let onClose: () => void;
+  interface Props {
+    deploymentId: string;
+    onClose: () => void;
+  }
+
+  let { deploymentId, onClose }: Props = $props();
 
   interface DeploymentProgress {
     step: number;

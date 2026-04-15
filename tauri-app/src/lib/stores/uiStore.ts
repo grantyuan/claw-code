@@ -4,6 +4,7 @@ import type { PanelLayout } from '$types/config';
 interface UIState {
   theme: 'dark' | 'light' | 'system';
   actualTheme: 'dark' | 'light';
+  fontSize: number;
   panelLayout: PanelLayout;
   activeView: 'default' | 'agent-detail';
   selectedAgentId: string | null;
@@ -26,6 +27,7 @@ const defaultPanelLayout: PanelLayout = {
 const defaultState: UIState = {
   theme: 'system',
   actualTheme: 'dark',
+  fontSize: 14,
   panelLayout: defaultPanelLayout,
   activeView: 'default',
   selectedAgentId: null,
@@ -56,6 +58,16 @@ function createUIStore() {
         }
         
         return { ...state, theme, actualTheme };
+      });
+    },
+
+    setFontSize: (fontSize: number) => {
+      update(state => {
+        if (typeof window !== 'undefined') {
+          document.documentElement.style.fontSize = `${fontSize}px`;
+          localStorage.setItem('clawcode-font-size', String(fontSize));
+        }
+        return { ...state, fontSize };
       });
     },
 
@@ -109,6 +121,15 @@ function createUIStore() {
           update(state => ({ ...state, theme: savedTheme, actualTheme }));
         } else {
           document.documentElement.classList.add('dark');
+        }
+
+        const savedFontSize = localStorage.getItem('clawcode-font-size');
+        if (savedFontSize) {
+          const fontSize = parseInt(savedFontSize, 10);
+          if (!isNaN(fontSize) && fontSize >= 12 && fontSize <= 20) {
+            document.documentElement.style.fontSize = `${fontSize}px`;
+            update(state => ({ ...state, fontSize }));
+          }
         }
       }
     },

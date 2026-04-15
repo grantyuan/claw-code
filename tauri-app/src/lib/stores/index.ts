@@ -5,3 +5,4 @@ export { agentStore, agentList, leaderAgent, selectedAgent, activeAgents } from 
 export { taskStore, activeTaskList, pendingTaskList, completedTaskList, overallProgress } from './taskStore';
 export { configStore, hasUnsavedChanges, configErrors } from './configStore';
 export { sessionStore, activeSession, sessionCount } from './sessionStore';
+export { toastStore } from './toastStore';

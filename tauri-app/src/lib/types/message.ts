@@ -48,3 +48,9 @@ export interface Conversation {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export function toDate(input: string | number | Date): Date {
+  if (input instanceof Date) return input;
+  if (typeof input === 'number') return new Date(input);
+  return new Date(input);
+}

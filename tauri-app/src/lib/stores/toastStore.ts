@@ -53,6 +53,10 @@ function createToastStore() {
     info(message: string, duration?: number) {
       return this.show(message, 'info', duration);
     },
+
+    addToast(toast: Omit<ToastItem, 'id'>) {
+      return this.show(toast.message, toast.type, toast.duration);
+    },
   };
 }
 

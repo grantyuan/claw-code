@@ -42,7 +42,7 @@ export type {
 export { ConnectionStatus } from './connection';
 export type { ConnectionInfo, WebSocketMessage, ConnectionHealth } from './connection';
 
-export { MessageType } from './message';
+export { MessageType, toDate } from './message';
 export type { Message, MessageMetadata, CodeBlock, StreamChunk, Conversation } from './message';
 
 export type { Session, RuntimeError, HealthStatus, SessionStatus } from './session';

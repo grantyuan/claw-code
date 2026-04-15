@@ -1,14 +1,16 @@
+use futures_util::Stream;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
 use api::{
     ApiError, InputContentBlock, InputMessage, MessageRequest, MessageResponse, OutputContentBlock,
-    ProviderClient,
+    ProviderClient, StreamEvent,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -366,6 +368,122 @@ impl ClawRuntime {
         Ok(response)
     }
 
+    pub async fn send_message_stream(
+        &self,
+        session_id: &str,
+        input: &str,
+    ) -> Result<StreamingResponse> {
+        let session_id = SessionId::new(session_id.to_string());
+
+        let processed = MessageProcessor::parse_input(input);
+        tracing::info!(
+            "Processing streaming message for session: {}, type: {:?}, content_len: {}",
+            session_id,
+            processed.command_type,
+            input.len()
+        );
+
+        let session_info = {
+            let mut sessions = self.sessions.lock().await;
+            let session = sessions
+                .get_mut(&session_id)
+                .ok_or_else(|| RuntimeError::SessionNotFound(session_id.to_string()))?;
+
+            session.last_active_at = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            session.status = SessionStatus::Running;
+            session.message_count += 1;
+
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            session.history.push(Message {
+                role: "user".to_string(),
+                content: input.to_string(),
+                timestamp: now,
+            });
+
+            session.to_api_messages()
+        };
+
+        let provider = self.provider.clone();
+        let model = self.config.model.clone();
+        let history = session_info;
+
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+
+        let input_owned = input.to_string();
+        tokio::spawn(async move {
+            let mut stream = match provider
+                .stream_message(&MessageRequest {
+                    model,
+                    max_tokens: 4096,
+                    messages: {
+                        let mut msgs = history;
+                        msgs.push(InputMessage::user_text(&input_owned));
+                        msgs
+                    },
+                    system: None,
+                    tools: None,
+                    tool_choice: None,
+                    stream: true,
+                    temperature: None,
+                    top_p: None,
+                    frequency_penalty: None,
+                    presence_penalty: None,
+                    stop: None,
+                    reasoning_effort: None,
+                })
+                .await
+            {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = tx
+                        .send(ResponseEvent::Error {
+                            message: e.to_string(),
+                        })
+                        .await;
+                    return;
+                }
+            };
+
+            let mut full_text = String::new();
+
+            loop {
+                let result = stream.next_event().await;
+                match result {
+                    Ok(Some(api_event)) => {
+                        let response_event: ResponseEvent = api_event.clone().into();
+                        if let ResponseEvent::ContentBlockDelta { delta, .. } = &response_event {
+                            if let Some(text) = &delta.text {
+                                full_text.push_str(text);
+                            }
+                        }
+                        if let ResponseEvent::MessageStop = &response_event {
+                            // Message complete - session history will be updated when MessageStop is received
+                        }
+                        let _ = tx.send(response_event).await;
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        let _ = tx
+                            .send(ResponseEvent::Error {
+                                message: e.to_string(),
+                            })
+                            .await;
+                    }
+                }
+            }
+        });
+
+        Ok(StreamingResponse {
+            events: Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx)),
+        })
+    }
+
     async fn call_llm(&self, session: &Session, input: &str) -> Result<String> {
         let MessageResponse { content, .. }: MessageResponse = self
             .provider
@@ -428,7 +546,93 @@ pub struct HealthStatus {
     pub config: RuntimeConfig,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ResponseEvent {
+    ContentBlockStart { index: usize, block_type: String },
+    ContentBlockDelta { index: usize, delta: ContentDelta },
+    ContentBlockStop { index: usize },
+    MessageStart { message_id: String, role: String },
+    MessageDelta { delta: MessageDelta },
+    MessageStop,
+    Error { message: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContentDelta {
+    pub text: Option<String>,
+    pub type_: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageDelta {
+    pub text: Option<String>,
+    pub usage: Option<Usage>,
+    pub stop_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Usage {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+    pub cache_creation_input_tokens: u32,
+    pub cache_read_input_tokens: u32,
+}
+
+pub struct StreamingResponse {
+    pub events: Pin<Box<dyn Stream<Item = ResponseEvent> + Send>>,
+}
+
+impl From<StreamEvent> for ResponseEvent {
+    fn from(event: StreamEvent) -> Self {
+        match event {
+            api::StreamEvent::MessageStart(e) => ResponseEvent::MessageStart {
+                message_id: e.message.id,
+                role: e.message.role,
+            },
+            api::StreamEvent::MessageDelta(e) => ResponseEvent::MessageDelta {
+                delta: MessageDelta {
+                    text: None,
+                    usage: Some(Usage {
+                        input_tokens: e.usage.input_tokens,
+                        output_tokens: e.usage.output_tokens,
+                        cache_creation_input_tokens: e.usage.cache_creation_input_tokens,
+                        cache_read_input_tokens: e.usage.cache_read_input_tokens,
+                    }),
+                    stop_reason: e.delta.stop_reason,
+                },
+            },
+            api::StreamEvent::ContentBlockStart(e) => ResponseEvent::ContentBlockStart {
+                index: e.index as usize,
+                block_type: format!("{:?}", e.content_block),
+            },
+            api::StreamEvent::ContentBlockDelta(e) => {
+                let text = if let api::ContentBlockDelta::TextDelta { text } = &e.delta {
+                    Some(text.clone())
+                } else {
+                    None
+                };
+                ResponseEvent::ContentBlockDelta {
+                    index: e.index as usize,
+                    delta: ContentDelta {
+                        text,
+                        type_: format!("{:?}", e.delta),
+                    },
+                }
+            }
+            api::StreamEvent::ContentBlockStop(e) => ResponseEvent::ContentBlockStop {
+                index: e.index as usize,
+            },
+            api::StreamEvent::MessageStop(_) => ResponseEvent::MessageStop,
+        }
+    }
+}
+
 pub fn create_runtime() -> Result<ClawRuntime> {
     let config = RuntimeConfig::default();
+    ClawRuntime::new(config)
+}
+
+pub fn create_runtime_with_config(config: RuntimeConfig) -> Result<ClawRuntime> {
     ClawRuntime::new(config)
 }

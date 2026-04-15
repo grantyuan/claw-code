@@ -1,5 +1,11 @@
 export type SessionStatus = 'active' | 'idle' | 'running' | 'error';
 
+export interface AIModelConfig {
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
 export interface Session {
   id: string;
   name: string;
@@ -8,6 +14,10 @@ export interface Session {
   createdAt: number;
   lastActiveAt: number;
   messageCount: number;
+  agentId?: string;
+  tags?: string[];
+  isArchived?: boolean;
+  currentModel?: AIModelConfig;
 }
 
 export interface RuntimeError {

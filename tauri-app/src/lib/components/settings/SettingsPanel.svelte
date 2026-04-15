@@ -1,6 +1,8 @@
 <script lang="ts">
   import { uiStore } from '$stores/uiStore';
   import { configStore } from '$stores/configStore';
+  import { runtimeStore } from '$stores/runtimeStore';
+  import { toastStore } from '$stores/toastStore';
   import AIModelSettings from './AIModelSettings.svelte';
   import TieredLMSettings from './TieredLMSettings.svelte';
   import AgentsSettings from './AgentsSettings.svelte';
@@ -25,6 +27,17 @@
     { id: 'ui', label: 'UI/UX', icon: '🎨' },
   ];
 
+  let uiTheme = $state($uiStore.theme);
+  let uiFontSize = $state($uiStore.fontSize || 14);
+  let uiFontFamily = $state('inter');
+  let uiNotifications = $state({ sound: false, desktop: false, inApp: true, level: 'important' });
+
+  let remoteSshPort = $state(22);
+  let remoteSshKeyPath = $state('~/.ssh/id_rsa');
+  let remoteInstallPath = $state('/opt/clawcode');
+  let remoteAutoStart = $state(true);
+  let remoteAutoUpdate = $state(false);
+
   function handleClose() {
     if (hasUnsavedChanges) {
       if (confirm('You have unsaved changes. Are you sure you want to close?')) {
@@ -35,15 +48,39 @@
     }
   }
 
-  function handleSave() {
+  async function handleSave() {
+    const config = $configStore.config;
+
+    if (activeTab === 'ui') {
+      uiStore.setTheme(uiTheme);
+      uiStore.setFontSize(uiFontSize);
+    }
+
     configStore.saveToStorage();
     configStore.markSaved();
+
+    try {
+      await runtimeStore.checkHealth();
+    } catch {}
+
+    toastStore.addToast({
+      type: 'success',
+      message: 'Settings saved successfully',
+      duration: 3000,
+    });
   }
 
   function handleCancel() {
     configStore.loadFromStorage();
+    uiTheme = $uiStore.theme;
+    uiFontSize = $uiStore.fontSize || 14;
     uiStore.toggleSettings();
   }
+
+  $effect(() => {
+    uiTheme = $uiStore.theme;
+    uiFontSize = $uiStore.fontSize || 14;
+  });
 </script>
 
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -104,7 +141,9 @@
               <h4 class="text-md font-medium mb-3" style="color: var(--color-text);">Remote Computers</h4>
               <div class="p-4 mb-3 rounded-lg" style="background-color: var(--color-bg); border: 1px solid var(--color-border);">
                 <p class="text-sm" style="color: var(--color-text-secondary);">No remote computers configured</p>
-                <Button variant="primary" size="sm" class="mt-2">Add Computer</Button>
+                <Button variant="primary" size="sm" class="mt-2" onclick={() => {
+                  toastStore.addToast({ type: 'info', message: 'Remote computer setup: Enter SSH connection details below', duration: 3000 });
+                }}>Add Computer</Button>
               </div>
             </div>
             <div>
@@ -112,11 +151,11 @@
               <div class="space-y-4">
                 <div>
                   <label class="block text-sm font-medium mb-1" style="color: var(--color-text);">Default SSH Port</label>
-                  <input type="number" class="input" value="22" min="1" max="65535" />
+                  <input type="number" class="input" bind:value={remoteSshPort} min="1" max="65535" onchange={() => configStore.setDirty(true)} />
                 </div>
                 <div>
                   <label class="block text-sm font-medium mb-1" style="color: var(--color-text);">SSH Key Path</label>
-                  <input type="text" class="input" placeholder="~/.ssh/id_rsa" />
+                  <input type="text" class="input" placeholder="~/.ssh/id_rsa" bind:value={remoteSshKeyPath} onchange={() => configStore.setDirty(true)} />
                 </div>
               </div>
             </div>
@@ -125,14 +164,14 @@
               <div class="space-y-4">
                 <div>
                   <label class="block text-sm font-medium mb-1" style="color: var(--color-text);">Install Path</label>
-                  <input type="text" class="input" placeholder="/opt/clawcode" />
+                  <input type="text" class="input" placeholder="/opt/clawcode" bind:value={remoteInstallPath} onchange={() => configStore.setDirty(true)} />
                 </div>
                 <div class="flex items-center gap-2">
-                  <input type="checkbox" id="auto-start" checked />
+                  <input type="checkbox" id="auto-start" bind:checked={remoteAutoStart} onchange={() => configStore.setDirty(true)} />
                   <label for="auto-start" class="text-sm" style="color: var(--color-text);">Auto-start on boot</label>
                 </div>
                 <div class="flex items-center gap-2">
-                  <input type="checkbox" id="auto-update" />
+                  <input type="checkbox" id="auto-update" bind:checked={remoteAutoUpdate} onchange={() => configStore.setDirty(true)} />
                   <label for="auto-update" class="text-sm" style="color: var(--color-text);">Auto-update</label>
                 </div>
               </div>
@@ -142,19 +181,30 @@
           <div class="space-y-6">
             <div>
               <label class="block text-sm font-medium mb-1" style="color: var(--color-text);">Theme</label>
-              <select class="input" onchange={(e) => uiStore.setTheme((e.target as HTMLSelectElement).value as 'dark' | 'light' | 'system')}>
+              <select class="input" bind:value={uiTheme} onchange={(e) => {
+                uiStore.setTheme(uiTheme);
+                configStore.setDirty(true);
+              }}>
                 <option value="dark">Dark</option>
                 <option value="light">Light</option>
                 <option value="system">System</option>
               </select>
+              <p class="text-xs mt-1" style="color: var(--color-text-secondary);">Theme applies immediately</p>
             </div>
             <div>
-              <label class="block text-sm font-medium mb-1" style="color: var(--color-text);">Font Size</label>
-              <input type="range" min="12" max="20" step="1" value="14" class="w-full" />
+              <label class="block text-sm font-medium mb-1" style="color: var(--color-text);">Font Size: {uiFontSize}px</label>
+              <input type="range" min="12" max="20" step="1" bind:value={uiFontSize} class="w-full" oninput={() => {
+                uiStore.setFontSize(uiFontSize);
+                configStore.setDirty(true);
+              }} />
+              <div class="flex justify-between text-xs" style="color: var(--color-text-secondary);">
+                <span>12px</span>
+                <span>20px</span>
+              </div>
             </div>
             <div>
               <label class="block text-sm font-medium mb-1" style="color: var(--color-text);">Font Family</label>
-              <select class="input">
+              <select class="input" bind:value={uiFontFamily} onchange={() => configStore.setDirty(true)}>
                 <option value="inter">Inter</option>
                 <option value="jetbrains">JetBrains Mono</option>
                 <option value="system">System Default</option>
@@ -164,16 +214,24 @@
               <h4 class="text-md font-medium mb-3" style="color: var(--color-text);">Notifications</h4>
               <div class="space-y-2">
                 <div class="flex items-center gap-2">
-                  <input type="checkbox" id="sound" checked />
+                  <input type="checkbox" id="sound" bind:checked={uiNotifications.sound} onchange={() => configStore.setDirty(true)} />
                   <label for="sound" class="text-sm" style="color: var(--color-text);">Sound alerts</label>
                 </div>
                 <div class="flex items-center gap-2">
-                  <input type="checkbox" id="desktop" checked />
+                  <input type="checkbox" id="desktop" bind:checked={uiNotifications.desktop} onchange={() => configStore.setDirty(true)} />
                   <label for="desktop" class="text-sm" style="color: var(--color-text);">Desktop notifications</label>
                 </div>
                 <div class="flex items-center gap-2">
-                  <input type="checkbox" id="inapp" checked />
+                  <input type="checkbox" id="inapp" bind:checked={uiNotifications.inApp} onchange={() => configStore.setDirty(true)} />
                   <label for="inapp" class="text-sm" style="color: var(--color-text);">In-app notifications</label>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-1" style="color: var(--color-text);">Notification Level</label>
+                  <select class="input" bind:value={uiNotifications.level} onchange={() => configStore.setDirty(true)}>
+                    <option value="all">All notifications</option>
+                    <option value="important">Important only</option>
+                    <option value="none">None</option>
+                  </select>
                 </div>
               </div>
             </div>
@@ -191,7 +249,6 @@
           class="px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           style="background-color: var(--color-primary-500, #3b82f6); color: white;"
           onclick={handleSave}
-          disabled={!hasUnsavedChanges}
         >
           Save Changes
         </button>

@@ -2,8 +2,12 @@
   import { onMount, onDestroy } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
 
-  export let agentId: string;
-  export let onClose: () => void;
+  interface Props {
+    agentId: string;
+    onClose: () => void;
+  }
+
+  let { agentId, onClose }: Props = $props();
 
   interface AgentIOEvent {
     agentId: string;

@@ -175,6 +175,8 @@ body {
   border: 1px solid var(--color-border);
   background-color: var(--color-surface);
   color: var(--color-text);
+  appearance: auto;
+  cursor: text;
 }
 
 .input:focus {

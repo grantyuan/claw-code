@@ -47,12 +47,14 @@ pub async fn chat_message(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ChatRequest>,
 ) -> Json<Value> {
-    let runtime = match state.runtime.as_ref() {
+    let runtime_guard = state.runtime.read().await;
+    let runtime = match runtime_guard.as_ref() {
         Some(r) => r,
         None => {
-            tracing::error!("RUNTIME_NOT_AVAILABLE: tauri-app message bypassed claw CLI");
+            tracing::error!("RUNTIME_NOT_AVAILABLE: Initialize runtime with /api/runtime/init first");
             return Json(json!({
-                "error": "Runtime not available"
+                "error": "Runtime not available - initialize with /api/runtime/init first",
+                "hint": "Configure AI model settings and save to initialize runtime"
             }));
         }
     };

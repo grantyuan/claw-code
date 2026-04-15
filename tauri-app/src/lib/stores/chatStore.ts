@@ -1,6 +1,9 @@
 import { writable, derived } from 'svelte/store';
 import type { Message, Conversation, StreamChunk } from '$types/message';
 import { MessageType } from '$types/message';
+import { apiService } from '$services/apiService';
+import { sessionStore } from '$stores/sessionStore';
+import { toastStore } from '$stores/toastStore';
 
 interface ChatState {
   conversations: Map<string, Conversation>;
@@ -8,6 +11,7 @@ interface ChatState {
   streamingMessage: string;
   streamingMessageId: string | null;
   isStreaming: boolean;
+  lastError: string | null;
 }
 
 const defaultState: ChatState = {
@@ -16,6 +20,7 @@ const defaultState: ChatState = {
   streamingMessage: '',
   streamingMessageId: null,
   isStreaming: false,
+  lastError: null,
 };
 
 function createChatStore() {
@@ -35,7 +40,7 @@ function createChatStore() {
           createdAt: new Date(),
           updatedAt: new Date(),
         });
-        return { ...state, conversations, activeConversation: id };
+        return { ...state, conversations, activeConversation: id, lastError: null };
       });
     },
 
@@ -62,6 +67,7 @@ function createChatStore() {
         streamingMessage: '',
         streamingMessageId: messageId,
         isStreaming: true,
+        lastError: null,
       }));
     },
 
@@ -124,26 +130,106 @@ function createChatStore() {
 
     sendMessage: (conversationId: string, content: string) => {
       const messageId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-      const message: Message = {
+      const userMessage: Message = {
         id: messageId,
         conversationId,
         type: MessageType.User,
         content,
         timestamp: new Date(),
       };
-      
+
       update(state => {
         const conversations = new Map(state.conversations);
         const conversation = conversations.get(conversationId);
         if (conversation) {
-          conversation.messages.push(message);
+          conversation.messages.push(userMessage);
           conversation.updatedAt = new Date();
           conversations.set(conversationId, { ...conversation });
         }
-        return { ...state, conversations };
+        return { ...state, conversations, isStreaming: true, lastError: null };
       });
 
+      const aiMessageId = `msg-ai-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      update(state => ({
+        ...state,
+        streamingMessageId: aiMessageId,
+        streamingMessage: '',
+      }));
+
+      (async () => {
+        try {
+          let sessionId = 'default';
+          sessionStore.subscribe(state => {
+            if (state.activeSessionId) sessionId = state.activeSessionId;
+          })();
+          const response = await apiService.sendMessage(content, sessionId);
+
+          const aiMessage: Message = {
+            id: aiMessageId,
+            conversationId,
+            type: MessageType.AI,
+            content: response.content || response.message || response.text || JSON.stringify(response),
+            timestamp: new Date(),
+          };
+
+          update(state => {
+            const conversations = new Map(state.conversations);
+            const conversation = conversations.get(conversationId);
+            if (conversation) {
+              conversation.messages.push(aiMessage);
+              conversation.updatedAt = new Date();
+              conversations.set(conversationId, { ...conversation });
+            }
+            return {
+              ...state,
+              conversations,
+              streamingMessage: '',
+              streamingMessageId: null,
+              isStreaming: false,
+            };
+          });
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+
+          const errorMessage: Message = {
+            id: aiMessageId,
+            conversationId,
+            type: MessageType.Error,
+            content: `Failed to get response: ${errorMsg}`,
+            timestamp: new Date(),
+          };
+
+          update(state => {
+            const conversations = new Map(state.conversations);
+            const conversation = conversations.get(conversationId);
+            if (conversation) {
+              conversation.messages.push(errorMessage);
+              conversation.updatedAt = new Date();
+              conversations.set(conversationId, { ...conversation });
+            }
+            return {
+              ...state,
+              conversations,
+              streamingMessage: '',
+              streamingMessageId: null,
+              isStreaming: false,
+              lastError: errorMsg,
+            };
+          });
+
+          toastStore.addToast({
+            type: 'error',
+            message: `Message failed: ${errorMsg}`,
+            duration: 5000,
+          });
+        }
+      })();
+
       return messageId;
+    },
+
+    clearError: () => {
+      update(state => ({ ...state, lastError: null }));
     },
 
     reset: () => set(defaultState),

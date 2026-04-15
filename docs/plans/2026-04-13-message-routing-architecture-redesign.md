@@ -147,80 +147,67 @@ tauri-app 用户输入
 
 ## 4. 核心组件 API 设计
 
-### 4.1 Runtime 库导出 (rust/crates/runtime/src/lib.rs)
+### 4.1 Runtime 库导出 (rust/crates/cli-server/src/runtime/mod.rs)
+
+> **注意**: 实际代码中 ClawRuntime 位于 `cli-server/src/runtime/mod.rs`，而不是 `runtime/src/lib.rs`。
+> `runtime/src/lib.rs` 包含 core runtime primitives (Session, ConversationMessage 等)。
 
 ```rust
-pub struct ClawRuntime {
-    inner: Arc<ClawRuntimeInner>,
-}
-
-pub struct ClawRuntimeInitError {
-    pub message: String,
-    pub code: RuntimeErrorCode,
-}
+// 实际代码中的类型定义
 
 #[derive(Debug, Clone)]
-pub enum RuntimeErrorCode {
-    ConfigInvalid,
-    ProviderNotAvailable,
-    PermissionDenied,
-    SessionNotFound,
-    MessageDeliveryFailed,
-    InternalError,
+pub struct SessionId(String);  // 注意：这是 struct wrapper
+
+impl SessionId {
+    pub fn new(id: String) -> Self { Self(id) }
+    pub fn as_str(&self) -> &str { &self.0 }
 }
-
-impl ClawRuntime {
-    /// 初始化运行时
-    pub fn new(config: RuntimeConfig) -> Result<Self, ClawRuntimeInitError>;
-
-    /// 创建新会话
-    pub fn create_session(&self, project_path: &Path) -> Result<SessionId, RuntimeError>;
-
-    /// 获取会话列表
-    pub fn list_sessions(&self) -> Vec<SessionInfo>;
-
-    /// 切换活跃会话
-    pub fn switch_session(&self, session_id: SessionId) -> Result<(), RuntimeError>;
-
-    /// 关闭会话
-    pub fn close_session(&self, session_id: SessionId) -> Result<(), RuntimeError>;
-
-    /// 发送消息（命令行原始格式）
-    pub async fn send_message(
-        &self,
-        session_id: SessionId,
-        input: &str,
-    ) -> Result<StreamingResponse, RuntimeError>;
-
-    /// 检查运行时可用性
-    pub fn health_check(&self) -> RuntimeHealthStatus;
-}
+// ... 其他 From implementations
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub id: SessionId,
     pub name: String,
-    pub project_path: String,
+    pub project_path: PathBuf,  // 注意：实际是 PathBuf，不是 String
     pub status: SessionStatus,
     pub created_at: u64,
     pub last_active_at: u64,
     pub message_count: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SessionStatus {
-    Active,
-    Idle,
-    Running,
-    Error,
+#[derive(Debug, Clone)]
+pub struct Message {
+    pub role: String,
+    pub content: String,
+    pub timestamp: u64,
 }
 
-pub type SessionId = String;
-
-pub struct StreamingResponse {
-    pub events: Pin<Box<dyn Stream<Item = ResponseEvent> + Send>>,
+#[derive(Debug)]
+pub struct ClawRuntime {
+    config: RuntimeConfig,
+    sessions: Arc<Mutex<HashMap<SessionId, Session>>>,
+    provider: ProviderClient,  // 注意：有 provider 字段
 }
+
+impl ClawRuntime {
+    pub fn new(config: RuntimeConfig) -> Result<Self> {
+        // 实际初始化
+    }
+
+    pub async fn create_session(&self, project_path: &Path) -> Result<SessionId> { ... }
+    pub async fn list_sessions(&self) -> Vec<SessionInfo> { ... }
+    pub async fn get_session(&self, id: &SessionId) -> Option<Session> { ... }
+    pub async fn switch_session(&self, id: &SessionId) -> Result<()> { ... }
+    pub async fn close_session(&self, id: &SessionId) -> Result<()> { ... }
+
+    /// 发送消息（当前返回 String，SSE 流式响应待实现）
+    pub async fn send_message(&self, session_id: &str, input: &str) -> Result<String> { ... }
+
+    pub async fn health_check(&self) -> HealthStatus { ... }
+}
+
+/// 注意：StreamingResponse 类型当前未实现
+/// send_message 返回 Result<String>，如需 SSE 支持需要添加 StreamingResponse 类型
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -235,80 +222,55 @@ pub enum ResponseEvent {
 }
 ```
 
-### 4.2 tauri-app 集成 (tauri-app/src-tauri/src/runtime_integration.rs)
+### 4.2 tauri-app 集成
+
+> **注意**: `tauri-app/src-tauri/src/runtime_integration.rs` 在实际代码中**不存在**。
+> 当前运行时集成通过以下方式实现：
+> - Rust: `cli-server/src/runtime/mod.rs` (ClawRuntime) + `cli-server/src/chat_handler.rs` (API handler)
+> - Tauri 命令: `tauri-app/src-tauri/src/commands/` 目录下各模块
 
 ```rust
-use claw_runtime::{ClawRuntime, SessionId, RuntimeConfig, RuntimeError};
+// cli-server/src/chat_handler.rs (实际适配层实现)
 
-pub struct RuntimeState {
-    runtime: ClawRuntime,
-    sessions: HashMap<SessionId, SessionContext>,
+#[derive(Debug, Deserialize)]
+pub struct ChatRequest {
+    pub content: String,
+    #[serde(default)]
+    pub conversation_id: Option<String>,
+    pub model: Option<String>,
+    // 其他字段...
 }
 
-pub struct SessionContext {
-    project_path: PathBuf,
-    chat_history: Vec<ChatMessage>,
-}
+pub async fn chat_message(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<ChatRequest>,
+) -> Json<Value> {
+    let runtime = match state.runtime.as_ref() {
+        Some(r) => r,
+        None => {
+            tracing::error!("RUNTIME_NOT_AVAILABLE: tauri-app message bypassed claw CLI");
+            return Json(json!({"error": "Runtime not available"}));
+        }
+    };
 
-#[tauri::command]
-pub async fn init_runtime() -> Result<(), String> {
-    let config = load_runtime_config().map_err(|e| e.to_string())?;
-    let runtime = ClawRuntime::new(config).map_err(|e| e.to_string())?;
+    let session_id = request.conversation_id.unwrap_or_else(|| "default".to_string());
 
-    STATE.set(RuntimeState { runtime, sessions: HashMap::new() })
-        .map_err(|_| "Runtime already initialized")?;
+    let response = runtime.send_message(&session_id, &request.content).await;
 
-    Ok(())
-}
+    let result = match response {
+        Ok(msg) => json!({
+            "id": format!("msg-{}", uuid::Uuid::new_v4()),
+            "role": "assistant",
+            "content": msg,
+            "model": request.model.unwrap_or_default(),
+        }),
+        Err(e) => {
+            tracing::error!("Message send failed: {}", e);
+            json!({"error": format!("Send failed: {}", e)})
+        }
+    };
 
-#[tauri::command]
-pub async fn create_session(project_path: String) -> Result<SessionInfo, String> {
-    let state = STATE.get().ok_or("Runtime not initialized")?;
-    let path = PathBuf::from(&project_path);
-
-    let session_id = state.runtime.create_session(&path).map_err(|e| e.to_string())?;
-
-    state.sessions.insert(session_id.clone(), SessionContext {
-        project_path: path,
-        chat_history: Vec::new(),
-    });
-
-    Ok(state.runtime.get_session_info(&session_id).map_err(|e| e.to_string())?)
-}
-
-#[tauri::command]
-pub async fn send_message(
-    session_id: String,
-    content: String,
-) -> Result<StreamResponse, String> {
-    let state = STATE.get().ok_or("Runtime not initialized")?;
-
-    state.runtime.send_message(&session_id, &content).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn list_sessions() -> Result<Vec<SessionInfo>, String> {
-    let state = STATE.get().ok_or("Runtime not initialized")?;
-    Ok(state.runtime.list_sessions())
-}
-
-#[tauri::command]
-pub async fn switch_session(session_id: String) -> Result<(), String> {
-    let state = STATE.get().ok_or("Runtime not initialized")?;
-    state.runtime.switch_session(&session_id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn close_session(session_id: String) -> Result<(), String> {
-    let state = STATE.get().ok_or("Runtime not initialized")?;
-    state.sessions.remove(&session_id);
-    state.runtime.close_session(&session_id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn runtime_health_check() -> Result<HealthStatus, String> {
-    let state = STATE.get().ok_or("Runtime not initialized")?;
-    Ok(state.runtime.health_check())
+    Json(result)
 }
 ```
 
@@ -318,56 +280,68 @@ pub async fn runtime_health_check() -> Result<HealthStatus, String> {
 
 ### 5.1 会话状态类型 (src/lib/types/session.ts)
 
+> **注意**: 实际代码 `tauri-app/src/lib/types/session.ts` 缺少文档中描述的某些字段。
+
+**实际代码 vs 设计文档对比：**
+
+| 字段 | 设计文档 | 实际代码 | 状态 |
+|------|---------|---------|------|
+| id | ✅ | ✅ | 已对齐 |
+| name | ✅ | ✅ | 已对齐 |
+| projectPath | ✅ | ✅ | 已对齐 |
+| status | ✅ | ✅ | 已对齐 |
+| createdAt | ✅ | ✅ | 已对齐 |
+| lastActiveAt | ✅ | ✅ | 已对齐 |
+| messageCount | ✅ | ✅ | 已对齐 |
+| agentId | ✅ | ❌ | 缺少 |
+| tags | ✅ | ❌ | 缺少 |
+| isArchived | ✅ | ❌ | 缺少 |
+| currentModel | ✅ | ❌ | 缺少 |
+
+**需要补充的字段：**
 ```typescript
-interface Session {
+// tauri-app/src/lib/types/session.ts
+export interface Session {
   id: string;
   name: string;
   projectPath: string;
-  createdAt: Date;
-  lastActiveAt: Date;
-  status: 'active' | 'idle' | 'running' | 'error';
-  currentModel?: AIModelConfig;
+  status: SessionStatus;
+  createdAt: number;
+  lastActiveAt: number;
   messageCount: number;
-}
-
-interface SessionState {
-  sessions: Session[];
-  activeSessionId: string | null;
-  isLoading: boolean;
-  error: RuntimeError | null;
-}
-
-interface RuntimeError {
-  type: RuntimeErrorType;
-  message: string;
-  recoverable: boolean;
-  details?: Record<string, unknown>;
-}
-
-enum RuntimeErrorType {
-  CLI_NOT_AVAILABLE = 'CLI_NOT_AVAILABLE',
-  SESSION_NOT_FOUND = 'SESSION_NOT_FOUND',
-  PERMISSION_DENIED = 'PERMISSION_DENIED',
-  MESSAGE_DELIVERY_FAILED = 'MESSAGE_DELIVERY_FAILED',
-  PROVIDER_ERROR = 'PROVIDER_ERROR',
-  NETWORK_ERROR = 'NETWORK_ERROR',
+  // 以下字段在设计文档中但代码中缺失：
+  agentId?: string;           // 代理ID
+  tags?: string[];            // 会话标签
+  isArchived?: boolean;        // 是否归档
+  currentModel?: string;       // 当前模型配置
 }
 ```
 
 ### 5.2 会话 Store (src/lib/stores/sessionStore.ts)
 
+> **注意**: 实际代码 `tauri-app/src/lib/stores/sessionStore.ts` 已实现以下接口，与设计文档基本对齐。
+
 ```typescript
-interface SessionActions {
-  createSession(projectPath: string): Promise<Session>;
-  switchSession(sessionId: string): Promise<void>;
-  closeSession(sessionId: string): Promise<void>;
-  renameSession(sessionId: string, newName: string): Promise<void>;
-  listSessions(): Promise<Session[]>;
-  getActiveSession(): Session | null;
+// 实际代码 (tauri-app/src/lib/stores/sessionStore.ts)
+interface SessionState {
+  sessions: Session[];
+  activeSessionId: string | null;
+  isLoading: boolean;
+  error: RuntimeError | null;
+  health: HealthStatus | null;
 }
 
-interface SessionStore extends SessionState, SessionActions {
-  subscribe: (callback: (state: SessionState) => void) => () => void;
+// SessionStore 方法
+interface SessionActions {
+  setLoading: (loading: boolean) => void;
+  setError: (error: RuntimeError | null) => void;
+  setHealth: (health: HealthStatus | null) => void;
+  setSessions: (sessions: Session[]) => void;
+  addSession: (session: Session) => void;
+  removeSession: (sessionId: string) => void;
+  setActiveSession: (sessionId: string | null) => void;
+  updateSession: (sessionId: string, updates: Partial<Session>) => void;
+  reset: () => void;
 }
 ```
 
@@ -376,13 +350,14 @@ interface SessionStore extends SessionState, SessionActions {
 ```
 src/lib/components/
 ├── sessions/
-│   ├── SessionSelector.svelte    # 顶部会话选择下拉框
-│   ├── SessionList.svelte        # 展开的会话列表面板
-│   ├── SessionListItem.svelte    # 单个会话项
-│   ├── NewSessionDialog.svelte   # 创建新会话对话框
-│   └── SessionContextMenu.svelte # 右键菜单
+│   ├── SessionSelector.svelte    # ✅ 已存在
+│   ├── SessionList.svelte        # (设计文档中有但未实现)
+│   ├── SessionListItem.svelte    # (设计文档中有但未实现)
+│   ├── NewSessionDialog.svelte   # (设计文档中有但未实现)
+│   └── SessionContextMenu.svelte # (设计文档中有但未实现)
 └── common/
-    └── SessionBadge.svelte       # 状态徽章
+    └── SessionBadge.svelte       # (设计文档中有但未实现)
+    └── StatusBadge.svelte        # ✅ 已存在 (不同名称)
 ```
 
 ### 5.4 SessionSelector UI 布局

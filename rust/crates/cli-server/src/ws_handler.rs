@@ -86,7 +86,8 @@ async fn handle_message(msg: &WsMessage, state: &Arc<AppState>) -> WsMessage {
             timestamp: chrono::Utc::now().to_rfc3339(),
         },
         "send_message" => {
-            if let Some(runtime) = state.runtime.as_ref() {
+            let runtime_guard = state.runtime.read().await;
+            if let Some(runtime) = runtime_guard.as_ref() {
                 let content = msg
                     .payload
                     .get("content")
@@ -113,7 +114,7 @@ async fn handle_message(msg: &WsMessage, state: &Arc<AppState>) -> WsMessage {
             } else {
                 WsMessage {
                     msg_type: "error".to_string(),
-                    payload: json!({ "message": "Runtime not available - messages must be routed through claw runtime" }),
+                    payload: json!({ "message": "Runtime not available - initialize with /api/runtime/init first" }),
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 }
             }
