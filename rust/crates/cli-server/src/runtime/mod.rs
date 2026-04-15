@@ -251,12 +251,18 @@ impl Clone for ClawRuntime {
 
 impl ClawRuntime {
     pub fn new(config: RuntimeConfig) -> Result<Self> {
-        let provider = ProviderClient::from_model(&config.model)
-            .map_err(|e: ApiError| RuntimeError::Provider(e.to_string()))?;
+        let provider = ProviderClient::from_provider_config(
+            &config.provider,
+            &config.endpoint,
+            config.api_key.as_deref(),
+            &config.model,
+        )
+        .map_err(|e: ApiError| RuntimeError::Provider(e.to_string()))?;
 
         tracing::info!(
-            "Initializing ClawRuntime - provider: {:?}, model: {}",
-            provider.provider_kind(),
+            "Initializing ClawRuntime - provider: {}, endpoint: {}, model: {}",
+            config.provider,
+            config.endpoint,
             config.model
         );
 

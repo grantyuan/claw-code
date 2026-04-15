@@ -46,6 +46,82 @@ impl ProviderClient {
         }
     }
 
+    pub fn from_provider_config(
+        provider: &str,
+        endpoint: &str,
+        api_key: Option<&str>,
+        model: &str,
+    ) -> Result<Self, ApiError> {
+        let provider_lower = provider.to_lowercase();
+        let is_local_endpoint = endpoint.contains("localhost") 
+            || endpoint.contains("127.0.0.1") 
+            || endpoint.contains("0.0.0.0")
+            || endpoint.starts_with("http://");
+        
+        match provider_lower.as_str() {
+            "anthropic" => {
+                let client = if let Some(key) = api_key.filter(|k| !k.is_empty()) {
+                    AnthropicClient::from_auth(AuthSource::ApiKey(key.to_string()))
+                } else {
+                    AnthropicClient::from_env()?
+                };
+                Ok(Self::Anthropic(client))
+            }
+            "xai" | "grok" => {
+                let client = if let Some(key) = api_key.filter(|k| !k.is_empty()) {
+                    OpenAiCompatClient::new(key, OpenAiCompatConfig::xai())
+                } else {
+                    OpenAiCompatClient::from_env(OpenAiCompatConfig::xai())?
+                };
+                let client = if endpoint.is_empty() {
+                    client
+                } else {
+                    client.with_base_url(endpoint)
+                };
+                Ok(Self::Xai(client))
+            }
+            "openai" | "ollama" | "other" | "openai-compatible" => {
+                let config = if model.starts_with("qwen") || endpoint.contains("dashscope") {
+                    OpenAiCompatConfig::dashscope()
+                } else {
+                    OpenAiCompatConfig::openai()
+                };
+                
+                let client = if let Some(key) = api_key.filter(|k| !k.is_empty()) {
+                    OpenAiCompatClient::new(key, config)
+                } else if is_local_endpoint {
+                    // For local endpoints (Ollama, vLLM, etc.), use a dummy key
+                    OpenAiCompatClient::new("local-no-key", config)
+                } else {
+                    OpenAiCompatClient::from_env(config)?
+                };
+                
+                let client = if endpoint.is_empty() {
+                    client
+                } else {
+                    client.with_base_url(endpoint)
+                };
+                Ok(Self::OpenAi(client))
+            }
+            _ => {
+                // Default to OpenAI-compatible for unknown providers
+                let client = if let Some(key) = api_key.filter(|k| !k.is_empty()) {
+                    OpenAiCompatClient::new(key, OpenAiCompatConfig::openai())
+                } else if is_local_endpoint {
+                    OpenAiCompatClient::new("local-no-key", OpenAiCompatConfig::openai())
+                } else {
+                    OpenAiCompatClient::from_env(OpenAiCompatConfig::openai())?
+                };
+                let client = if endpoint.is_empty() {
+                    client
+                } else {
+                    client.with_base_url(endpoint)
+                };
+                Ok(Self::OpenAi(client))
+            }
+        }
+    }
+
     #[must_use]
     pub const fn provider_kind(&self) -> ProviderKind {
         match self {

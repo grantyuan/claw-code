@@ -178,15 +178,23 @@ pub async fn init_runtime(
     Json(request): Json<InitRuntimeRequest>,
 ) -> Json<Value> {
     tracing::info!(
-        "Initializing runtime with provider: {}, model: {}",
+        "Initializing runtime with provider: {}, endpoint: {}, model: {}, has_api_key: {}",
         request.provider,
-        request.model
+        request.endpoint,
+        request.model,
+        !request.api_key.is_empty()
     );
+
+    let api_key = if request.api_key.is_empty() {
+        None
+    } else {
+        Some(request.api_key)
+    };
 
     let config = AIModelConfig {
         provider: request.provider,
         endpoint: request.endpoint,
-        api_key: Some(request.api_key),
+        api_key,
         model: request.model,
     };
 
