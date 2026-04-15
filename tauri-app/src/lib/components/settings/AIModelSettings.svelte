@@ -65,7 +65,7 @@
     const currentConfig = config || getDefaultConfig();
     const currentAIModel = getAIModel();
     
-    configStore.updateConfig({
+    const newConfig = {
       ...currentConfig,
       aiModel: {
         providers: updates.providers ?? currentAIModel.providers,
@@ -73,7 +73,11 @@
         models: updates.models ?? currentAIModel.models,
         tieredLM: updates.tieredLM ?? currentAIModel.tieredLM,
       },
-    });
+    };
+    
+    configStore.updateConfig(newConfig);
+    configStore.saveToStorage();
+    console.log('[AIModelSettings] Config saved to localStorage', newConfig.aiModel);
   }
 
   async function testModel(model: ModelConfig) {

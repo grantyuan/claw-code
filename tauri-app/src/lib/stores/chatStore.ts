@@ -138,6 +138,8 @@ function createChatStore() {
         timestamp: new Date(),
       };
 
+      console.log('[chatStore] sendMessage called', { conversationId, content, messageId });
+
       update(state => {
         const conversations = new Map(state.conversations);
         const conversation = conversations.get(conversationId);
@@ -145,6 +147,9 @@ function createChatStore() {
           conversation.messages.push(userMessage);
           conversation.updatedAt = new Date();
           conversations.set(conversationId, { ...conversation });
+          console.log('[chatStore] User message added', { conversationId, messageCount: conversation.messages.length });
+        } else {
+          console.error('[chatStore] Conversation not found', { conversationId, availableIds: Array.from(conversations.keys()) });
         }
         return { ...state, conversations, isStreaming: true, lastError: null };
       });
@@ -162,13 +167,19 @@ function createChatStore() {
           sessionStore.subscribe(state => {
             if (state.activeSessionId) sessionId = state.activeSessionId;
           })();
+          
+          console.log('[chatStore] Calling API sendMessage', { content, sessionId });
           const response = await apiService.sendMessage(content, sessionId);
+          console.log('[chatStore] API response', response);
 
+          const aiContent = response.content || response.message || response.text || JSON.stringify(response);
+          console.log('[chatStore] AI content', aiContent);
+          
           const aiMessage: Message = {
             id: aiMessageId,
             conversationId,
             type: MessageType.AI,
-            content: response.content || response.message || response.text || JSON.stringify(response),
+            content: aiContent,
             timestamp: new Date(),
           };
 
@@ -179,6 +190,9 @@ function createChatStore() {
               conversation.messages.push(aiMessage);
               conversation.updatedAt = new Date();
               conversations.set(conversationId, { ...conversation });
+              console.log('[chatStore] AI message added', { conversationId, messageCount: conversation.messages.length });
+            } else {
+              console.error('[chatStore] Conversation not found for AI message', { conversationId });
             }
             return {
               ...state,

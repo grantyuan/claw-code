@@ -29,21 +29,29 @@
     }
   });
 
-  function initConversation() {
-    if (!$chatStore.activeConversation) {
-      const id = `conv-${Date.now()}`;
-      chatStore.createConversation(id, $agentStore.leaderAgent || 'leader-default');
+  function initConversation(): string | null {
+    if ($chatStore.activeConversation) {
+      return $chatStore.activeConversation;
     }
+    const id = `conv-${Date.now()}`;
+    chatStore.createConversation(id, $agentStore.leaderAgent || 'leader-default');
+    console.log('[LeftPanel] Created conversation', { id });
+    return id;
   }
 
   function handleSend() {
     if (!inputText.trim() || isStreaming) return;
-    initConversation();
-    const convId = $chatStore.activeConversation;
-    if (convId) {
-      chatStore.sendMessage(convId, inputText.trim());
-      inputText = '';
+    
+    let convId = $chatStore.activeConversation;
+    if (!convId) {
+      convId = `conv-${Date.now()}`;
+      chatStore.createConversation(convId, $agentStore.leaderAgent || 'leader-default');
+      console.log('[LeftPanel] Created new conversation for message', { convId });
     }
+    
+    console.log('[LeftPanel] Sending message', { convId, content: inputText.trim() });
+    chatStore.sendMessage(convId, inputText.trim());
+    inputText = '';
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -55,13 +63,28 @@
 
   function getMessageTypeClass(type: MessageType): string {
     switch (type) {
-      case MessageType.User: return 'ml-auto bg-primary-600 text-white';
-      case MessageType.AI: return 'mr-auto';
-      case MessageType.System: return 'mx-auto bg-gray-100 dark:bg-gray-800 text-gray-500 text-xs';
-      case MessageType.Error: return 'mx-auto bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 text-xs';
-      case MessageType.Tool: return 'mr-auto bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700';
-      default: return 'mr-auto';
+      case MessageType.User: return 'bg-primary-600 text-white';
+      case MessageType.AI: return 'bg-gray-100 dark:bg-gray-800';
+      case MessageType.System: return 'bg-gray-100 dark:bg-gray-800 text-gray-500 text-xs';
+      case MessageType.Error: return 'bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800';
+      case MessageType.Tool: return 'bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700';
+      default: return 'bg-gray-100 dark:bg-gray-800';
     }
+  }
+
+  function toDate(input: string | number | Date | undefined | null): Date {
+    if (!input) return new Date();
+    if (input instanceof Date) {
+      return isNaN(input.getTime()) ? new Date() : input;
+    }
+    if (typeof input === 'number') return new Date(input);
+    const parsed = new Date(input);
+    return isNaN(parsed.getTime()) ? new Date() : parsed;
+  }
+
+  function formatTime(dateInput: string | number | Date | undefined | null): string {
+    const date = toDate(dateInput);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
   function getRuntimeStatusText(): string {
@@ -199,41 +222,59 @@
       </div>
     {:else}
       {#each messages as message (message.id)}
-        <div class="flex {message.type === MessageType.User ? 'justify-end' : 'justify-start'}">
-          <div class="max-w-[80%] rounded-xl px-4 py-2.5 {getMessageTypeClass(message.type)}">
-            {#if message.type === MessageType.AI || message.type === MessageType.Tool}
-              <div class="flex items-center gap-2 mb-1">
-                <span class="text-xs font-medium opacity-70">
-                  {message.type === MessageType.AI ? 'AI' : 'Tool'}
-                </span>
+        <div class="flex {message.type === MessageType.User ? 'justify-end' : 'justify-start'} gap-2 animate-fade-in">
+          {#if message.type !== MessageType.User}
+            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shadow-md">
+              AI
+            </div>
+          {/if}
+          
+          <div class="max-w-[75%] {message.type === MessageType.User ? 'order-first' : ''}">
+            <div class="rounded-2xl px-4 py-3 shadow-sm {getMessageTypeClass(message.type)} {message.type === MessageType.User ? 'rounded-tr-sm' : 'rounded-tl-sm'}">
+              {#if message.type === MessageType.Error}
+                <div class="flex items-center gap-2 mb-2 text-red-600 dark:text-red-400">
+                  <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <span class="text-xs font-semibold">Error</span>
+                </div>
+              {/if}
+              
+              <div class="text-sm leading-relaxed whitespace-pre-wrap break-words" style="color: {message.type === MessageType.User ? 'white' : 'var(--color-text)'};">
+                {message.content}
               </div>
-            {/if}
-            {#if message.type === MessageType.Error}
-              <div class="flex items-center gap-2 mb-1">
-                <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                <span class="text-xs font-medium">Error</span>
-              </div>
-            {/if}
-            <div class="text-sm whitespace-pre-wrap">{message.content}</div>
-            <div class="text-xs opacity-50 mt-1">
-              {new Date(message.timestamp).toLocaleTimeString()}
+            </div>
+            
+            <div class="flex {message.type === MessageType.User ? 'justify-end' : 'justify-start'} mt-1 px-1">
+              <span class="text-[10px] text-gray-400 dark:text-gray-500">
+                {formatTime(message.timestamp)}
+              </span>
             </div>
           </div>
+          
+          {#if message.type === MessageType.User}
+            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-green-500 to-teal-600 flex items-center justify-center text-white text-xs font-bold shadow-md order-last">
+              U
+            </div>
+          {/if}
         </div>
       {/each}
 
       {#if isStreaming}
-        <div class="flex justify-start">
-          <div class="max-w-[80%] rounded-xl px-4 py-2.5 mr-auto">
-            <div class="flex items-center gap-2">
-              <div class="flex gap-1">
-                <span class="w-2 h-2 rounded-full bg-primary-500 animate-bounce" style="animation-delay: 0ms;"></span>
-                <span class="w-2 h-2 rounded-full bg-primary-500 animate-bounce" style="animation-delay: 150ms;"></span>
-                <span class="w-2 h-2 rounded-full bg-primary-500 animate-bounce" style="animation-delay: 300ms;"></span>
+        <div class="flex justify-start gap-2 animate-fade-in">
+          <div class="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shadow-md">
+            AI
+          </div>
+          <div class="max-w-[75%]">
+            <div class="rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm bg-gray-100 dark:bg-gray-800">
+              <div class="flex items-center gap-3">
+                <div class="flex gap-1">
+                  <span class="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style="animation-delay: 0ms;"></span>
+                  <span class="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style="animation-delay: 150ms;"></span>
+                  <span class="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style="animation-delay: 300ms;"></span>
+                </div>
+                <span class="text-xs text-gray-500 dark:text-gray-400">Thinking...</span>
               </div>
-              <span class="text-xs opacity-70">Processing via Claw Runtime...</span>
             </div>
           </div>
         </div>

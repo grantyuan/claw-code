@@ -332,9 +332,15 @@ impl ClawRuntime {
 
         let response = {
             let mut sessions = self.sessions.lock().await;
-            let session = sessions
-                .get_mut(&session_id)
-                .ok_or_else(|| RuntimeError::SessionNotFound(session_id.to_string()))?;
+            
+            // Auto-create session if it doesn't exist
+            if !sessions.contains_key(&session_id) {
+                tracing::info!("Auto-creating session: {}", session_id);
+                let session = Session::new(session_id.clone(), std::path::PathBuf::from("."));
+                sessions.insert(session_id.clone(), session);
+            }
+            
+            let session = sessions.get_mut(&session_id).unwrap();
 
             session.last_active_at = SystemTime::now()
                 .duration_since(UNIX_EPOCH)

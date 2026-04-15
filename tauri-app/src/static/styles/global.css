@@ -184,3 +184,72 @@ body {
   ring: 2px;
   ring-color: #0ea5e9;
 }
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes pulse-soft {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+.message-user {
+  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+}
+
+.message-ai {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.dark .message-ai {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+}
+
+.chat-bubble {
+  position: relative;
+}
+
+.chat-bubble::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+
+.chat-bubble-user::before {
+  right: -8px;
+  border-width: 8px 0 8px 8px;
+  border-color: transparent transparent transparent #0284c7;
+}
+
+.chat-bubble-ai::before {
+  left: -8px;
+  border-width: 8px 8px 8px 0;
+  border-color: transparent #f1f5f9 transparent transparent;
+}
+
+.dark .chat-bubble-ai::before {
+  border-color: transparent #1e293b transparent transparent;
+}
